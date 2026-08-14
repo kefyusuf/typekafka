@@ -44,7 +44,12 @@ async function main(): Promise<void> {
 
   const dlq = new DlqManager(broker);
   const publisher = new TypedPublisher(broker);
-  const telemetry = createTelemetryClient(broker, logger);
+  // Telemetry is a real-Kafka feature: the in-memory demo keeps working as
+  // before but does not emit telemetry (see spec §3.3).
+  const telemetry = createTelemetryClient(
+    config.driver === 'confluent' ? broker : null,
+    logger,
+  );
   const notificationHandler = createNotificationHandler(logger);
 
   await broker.connect();

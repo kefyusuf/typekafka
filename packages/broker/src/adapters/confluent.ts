@@ -204,10 +204,12 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
         throw new BrokerError(`produce to "${topic}" failed: no metadata returned`);
       }
 
+      // The driver's KafkaJS facade reports the produced offset in
+      // `baseOffset` (it never sets `offset` on real Kafka).
       return {
         topic: record.topicName,
         partition: record.partition,
-        offset: record.offset ?? '',
+        offset: record.baseOffset?.toString() ?? record.offset ?? '',
       };
     } catch (error) {
       throw toBrokerError(`produce to "${topic}" failed`, error);

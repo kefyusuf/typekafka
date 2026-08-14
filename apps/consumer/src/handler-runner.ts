@@ -49,6 +49,19 @@ export function createHandlerRunner<T>(
     const telemetry = config.telemetry;
     const groupLabel = config.groupId ?? 'consumer';
 
+    const emitCommitted = async (): Promise<void> => {
+      await telemetry?.emit({
+        type: 'committed',
+        topic: message.topic,
+        eventId,
+        orderId,
+        partition: message.partition,
+        offset: message.offset,
+        message: 'Offset committed — message fully processed',
+        concept: 'offset-commit',
+      });
+    };
+
     // --- 1. parse / validate ---
     let payload: T;
     try {
@@ -75,16 +88,7 @@ export function createHandlerRunner<T>(
       });
       await dlq.deadLetter(message, error, 0);
       await context.commit();
-      await telemetry?.emit({
-        type: 'committed',
-        topic: message.topic,
-        eventId,
-        orderId,
-        partition: message.partition,
-        offset: message.offset,
-        message: 'Offset committed — message fully processed',
-        concept: 'offset-commit',
-      });
+      await emitCommitted();
       return;
     }
 
@@ -162,30 +166,12 @@ export function createHandlerRunner<T>(
       });
       await dlq.deadLetter(message, error, attempts);
       await context.commit();
-      await telemetry?.emit({
-        type: 'committed',
-        topic: message.topic,
-        eventId,
-        orderId,
-        partition: message.partition,
-        offset: message.offset,
-        message: 'Offset committed — message fully processed',
-        concept: 'offset-commit',
-      });
+      await emitCommitted();
       return;
     }
 
     // --- 4. commit on success ---
     await context.commit();
-    await telemetry?.emit({
-      type: 'committed',
-      topic: message.topic,
-      eventId,
-      orderId,
-      partition: message.partition,
-      offset: message.offset,
-      message: 'Offset committed — message fully processed',
-      concept: 'offset-commit',
-    });
+    await emitCommitted();
   };
 }

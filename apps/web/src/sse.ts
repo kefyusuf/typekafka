@@ -1,12 +1,9 @@
 import type { Response } from 'express';
 import type { TelemetryEvent } from '@nodejs-kafka/domain';
-import type { AppLogger } from '@nodejs-kafka/infra';
 
 export class SseHub {
   private clients = new Set<Response>();
   private heartbeat: NodeJS.Timeout | null = null;
-
-  constructor(private readonly logger: AppLogger) {}
 
   add(res: Response): void {
     this.clients.add(res);

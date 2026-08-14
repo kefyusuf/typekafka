@@ -102,4 +102,32 @@ describe('web server', () => {
     });
     expect(res.status).toBe(502);
   });
+
+  it('rejects invalid order input with 400 and produces nothing', async () => {
+    const s = await setup();
+    running.push(s);
+
+    const received: unknown[] = [];
+    const dispose = await s.broker.consume(
+      ['orders.created'],
+      (message) => {
+        received.push(message.value);
+      },
+      { groupId: 'invalid-input-check' },
+    );
+    try {
+      const res = await fetch(`http://127.0.0.1:${s.port}/api/orders`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sku: 'MUG-WHITE', quantity: 0, unitPriceCents: 1500 }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toMatch(/quantity|unitPriceCents/);
+    } finally {
+      await dispose();
+    }
+
+    expect(received).toHaveLength(0);
+  });
 });

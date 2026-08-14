@@ -95,8 +95,6 @@ services:
       BROKER_DRIVER: confluent
       BROKER_BROKERS: kafka:9092
       BROKER_CLIENT_ID: nodejs-kafka-web
-      CONSUMER_GROUP_ID: notification-service
-      CONSUMER_FROM_BEGINNING: "true"
       LOG_LEVEL: info
       WEB_PORT: "3000"
       TELEMETRY_GROUP_ID: web-telemetry

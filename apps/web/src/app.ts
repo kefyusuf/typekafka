@@ -31,7 +31,7 @@ export interface WebServer {
 
 export function createWebServer(options: WebServerOptions): WebServer {
   const { broker, logger, groupId, staticDir } = options;
-  const hub = new SseHub(logger);
+  const hub = new SseHub();
   const telemetry: TelemetryClient = createTelemetryClient(broker, logger);
 
   const app = express();
@@ -46,15 +46,26 @@ export function createWebServer(options: WebServerOptions): WebServer {
 
   app.post('/api/orders', async (req, res) => {
     const body = (req.body ?? {}) as {
-      sku?: string;
-      quantity?: number;
-      unitPriceCents?: number;
-      customerId?: string;
+      sku?: unknown;
+      quantity?: unknown;
+      unitPriceCents?: unknown;
+      customerId?: unknown;
     };
+    const isPositiveInt = (v: unknown): v is number =>
+      typeof v === 'number' && Number.isInteger(v) && v > 0;
+
+    // Reject input that would produce a schema-invalid OrderCreated
+    // (quantity <= 0 / non-integers / missing numeric fields).
+    if (!isPositiveInt(body.quantity) || !isPositiveInt(body.unitPriceCents)) {
+      res.status(400).json({
+        error: 'quantity and unitPriceCents must be positive integers',
+      });
+      return;
+    }
+
     const sku = typeof body.sku === 'string' && body.sku ? body.sku : 'TSHIRT-BLACK';
-    const quantity = typeof body.quantity === 'number' ? body.quantity : 1;
-    const unitPriceCents =
-      typeof body.unitPriceCents === 'number' ? body.unitPriceCents : 2_000;
+    const quantity = body.quantity;
+    const unitPriceCents = body.unitPriceCents;
     const customerId =
       typeof body.customerId === 'string' && body.customerId
         ? body.customerId
@@ -133,12 +144,16 @@ export function createWebServer(options: WebServerOptions): WebServer {
           const parsed = TelemetryEventSchema.safeParse(message.value);
           if (parsed.success) hub.broadcast(parsed.data);
         },
-        { groupId, fromBeginning: true, manualCommit: true },
+        { groupId, fromBeginning: true, manualCommit: false },
       );
 
       await new Promise<void>((resolve, reject) => {
-        server.once('error', reject);
-        server.listen(port, resolve);
+        const onError = (err: Error) => reject(err);
+        server.once('error', onError);
+        server.listen(port, () => {
+          server.removeListener('error', onError);
+          resolve();
+        });
       });
       const address = server.address();
       const actual = typeof address === 'object' && address ? address.port : port;

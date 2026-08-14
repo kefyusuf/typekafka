@@ -45,7 +45,7 @@ function fakeProducer(overrides: Record<string, unknown> = {}) {
     flush: vi.fn().mockResolvedValue(undefined),
     send: vi
       .fn()
-      .mockResolvedValue([{ topicName: 'orders.created', partition: 1, offset: '42' }]),
+      .mockResolvedValue([{ topicName: 'orders.created', partition: 1, baseOffset: '42' }]),
     ...overrides,
   };
 }
@@ -157,6 +157,23 @@ describe('ConfluentKafkaAdapter', () => {
       ],
     });
     expect(result).toEqual({ topic: 'orders.created', partition: 1, offset: '42' });
+
+    await broker.disconnect();
+  });
+
+  it('falls back to record.offset when baseOffset is absent', async () => {
+    const producer = fakeProducer({
+      send: vi
+        .fn()
+        .mockResolvedValue([{ topicName: 'orders.created', partition: 0, offset: '7' }]),
+    });
+    mocks.producerCreate.mockReturnValue(producer);
+
+    const broker = makeBroker();
+    await broker.connect();
+
+    const result = await broker.produce('orders.created', { orderId: 'ORD-1' });
+    expect(result.offset).toBe('7');
 
     await broker.disconnect();
   });
