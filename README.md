@@ -114,7 +114,7 @@ The adapters translate between the native client shape and a broker-agnostic `Ka
 
 Hexagonal architecture: business logic in `domain/` never imports a Kafka client. The port in `broker/` is the only seam, and `infra/` provides cross-cutting concerns (config, logging, retry, DLQ, publish).
 
-The web app (`apps/web`) publishes **telemetry events** to `telemetry.events` for every pipeline step. The web server consumes that topic in the `web-telemetry` group and broadcasts each event to connected browsers over **Server-Sent Events** (`GET /api/events`), so the flow diagram and event log update live.
+Every pipeline step in the consumer emits a **telemetry event** to `telemetry.events`, and the web app (`apps/web`) adds its own `produced` telemetry when an order is placed. The web server consumes that topic in the `web-telemetry` group and broadcasts each event to connected browsers over **Server-Sent Events** (`GET /api/events`), so the flow diagram and event log update live.
 
 ### Consumer pipeline
 
