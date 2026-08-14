@@ -127,4 +127,62 @@ describe('consumer pipeline (parse -> retry -> DLQ -> commit)', () => {
 
     await broker.disconnect();
   });
+
+  it('emits telemetry events for each pipeline step in order', async () => {
+    const broker = createBroker({
+      driver: 'in-memory',
+      connection: { brokers: ['in-memory://'], clientId: 'test' },
+      memoryAutoCommit: false,
+    });
+    await broker.connect();
+    await broker.createTopics([
+      { name: TOPIC_ORDER_CREATED, numPartitions: 3 },
+      { name: DLQ_TOPIC, numPartitions: 3 },
+    ]);
+
+    const dlq = new DlqManager(broker);
+    await dlq.ensureTopic();
+
+    const emitted: string[] = [];
+    const telemetry = {
+      enabled: true,
+      emit: async (input: { type: string }) => {
+        emitted.push(input.type);
+      },
+    } as unknown as { enabled: boolean; emit: (i: { type: string }) => Promise<void> };
+
+    const runner = createHandlerRunner(
+      broker,
+      dlq,
+      {
+        parse: (value) => parseEvent('orders.created', value),
+        handler: async (order: OrderCreated) => {
+          if (order.totalCents > 100_000) {
+            throw new Error('provider timed out');
+          }
+        },
+        attempts: 3,
+        baseDelayMs: 1,
+        telemetry,
+        groupId: 'notification-service',
+      },
+      noopLogger,
+    );
+
+    await broker.consume([TOPIC_ORDER_CREATED], runner, { manualCommit: true });
+
+    const publisher = new TypedPublisher(broker);
+    await publisher.publishOrder(createSampleOrder(3), { key: 'ORD-00003' }); // oversized -> retry -> DLQ
+
+    await sleep(50);
+
+    expect(emitted[0]).toBe('consumed');
+    expect(emitted[1]).toBe('parsed');
+    expect(emitted[2]).toBe('retrying');
+    expect(emitted[3]).toBe('retrying');
+    expect(emitted[4]).toBe('dead-lettered');
+    expect(emitted[5]).toBe('committed');
+
+    await broker.disconnect();
+  });
 });

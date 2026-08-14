@@ -3,7 +3,7 @@ import type {
   ConsumeHandler,
   IMessageBroker,
 } from '@nodejs-kafka/broker';
-import type { AppLogger } from '@nodejs-kafka/infra';
+import type { AppLogger, TelemetryClient } from '@nodejs-kafka/infra';
 import { withRetry } from '@nodejs-kafka/infra';
 import { DlqManager } from '@nodejs-kafka/infra';
 
@@ -15,6 +15,10 @@ export interface HandlerConfig<T> {
   /** Retry attempts before sending to DLQ. Defaults to 3. */
   attempts?: number;
   baseDelayMs?: number;
+  /** Optional telemetry emitter; each pipeline step publishes an event. */
+  telemetry?: TelemetryClient;
+  /** Consumer group id, used in telemetry copy. */
+  groupId?: string;
 }
 
 /**
@@ -35,6 +39,16 @@ export function createHandlerRunner<T>(
   const baseDelayMs = config.baseDelayMs ?? 100;
 
   return async (message, context: ConsumeContext) => {
+    const asRecord = (value: unknown): Record<string, unknown> =>
+      typeof value === 'object' && value !== null
+        ? (value as Record<string, unknown>)
+        : {};
+    const raw = asRecord(message.value);
+    const eventId = typeof raw['eventId'] === 'string' ? raw['eventId'] : 'unknown';
+    const orderId = typeof raw['orderId'] === 'string' ? raw['orderId'] : 'unknown';
+    const telemetry = config.telemetry;
+    const groupLabel = config.groupId ?? 'consumer';
+
     // --- 1. parse / validate ---
     let payload: T;
     try {
@@ -49,10 +63,51 @@ export function createHandlerRunner<T>(
         },
         'invalid message, sending to DLQ',
       );
+      await telemetry?.emit({
+        type: 'invalid-to-dlq',
+        topic: message.topic,
+        eventId,
+        orderId,
+        partition: message.partition,
+        offset: message.offset,
+        message: 'Payload failed schema validation — sent straight to DLQ',
+        concept: 'schema-validation',
+      });
       await dlq.deadLetter(message, error, 0);
       await context.commit();
+      await telemetry?.emit({
+        type: 'committed',
+        topic: message.topic,
+        eventId,
+        orderId,
+        partition: message.partition,
+        offset: message.offset,
+        message: 'Offset committed — message fully processed',
+        concept: 'offset-commit',
+      });
       return;
     }
+
+    await telemetry?.emit({
+      type: 'consumed',
+      topic: message.topic,
+      eventId,
+      orderId,
+      partition: message.partition,
+      offset: message.offset,
+      message: `Message delivered to consumer group '${groupLabel}'`,
+      concept: 'consumer-group',
+    });
+    await telemetry?.emit({
+      type: 'parsed',
+      topic: message.topic,
+      eventId,
+      orderId,
+      partition: message.partition,
+      offset: message.offset,
+      message: 'Payload validated against its Zod schema',
+      concept: 'schema-validation',
+    });
 
     // --- 2. retry business handler ---
     try {
@@ -60,6 +115,17 @@ export function createHandlerRunner<T>(
         () => config.handler(payload),
         { attempts, baseDelayMs },
         (state, error) => {
+          void telemetry?.emit({
+            type: 'retrying',
+            topic: message.topic,
+            eventId,
+            orderId,
+            partition: message.partition,
+            offset: message.offset,
+            attempt: state.attempt,
+            message: `Handler failed (attempt ${state.attempt}) — backing off`,
+            concept: 'retry',
+          });
           logger.warn(
             {
               topic: message.topic,
@@ -84,12 +150,42 @@ export function createHandlerRunner<T>(
         },
         'handler exhausted retries, sending to DLQ',
       );
+      await telemetry?.emit({
+        type: 'dead-lettered',
+        topic: message.topic,
+        eventId,
+        orderId,
+        partition: message.partition,
+        offset: message.offset,
+        message: 'Handler exhausted retries — message sent to orders.dlq',
+        concept: 'dead-letter-queue',
+      });
       await dlq.deadLetter(message, error, attempts);
       await context.commit();
+      await telemetry?.emit({
+        type: 'committed',
+        topic: message.topic,
+        eventId,
+        orderId,
+        partition: message.partition,
+        offset: message.offset,
+        message: 'Offset committed — message fully processed',
+        concept: 'offset-commit',
+      });
       return;
     }
 
     // --- 4. commit on success ---
     await context.commit();
+    await telemetry?.emit({
+      type: 'committed',
+      topic: message.topic,
+      eventId,
+      orderId,
+      partition: message.partition,
+      offset: message.offset,
+      message: 'Offset committed — message fully processed',
+      concept: 'offset-commit',
+    });
   };
 }

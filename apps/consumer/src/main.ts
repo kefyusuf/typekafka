@@ -2,6 +2,7 @@ import { createBroker, type Disposer } from '@nodejs-kafka/broker';
 import {
   DLQ_TOPIC,
   RETRY_TOPIC,
+  TELEMETRY_TOPIC,
   TOPIC_ORDER_CREATED,
   TOPIC_PAYMENT_COMPLETED,
   createNotificationHandler,
@@ -11,6 +12,7 @@ import {
 } from '@nodejs-kafka/domain';
 import {
   createLogger,
+  createTelemetryClient,
   loadConfig,
   registerGracefulShutdown,
   DlqManager,
@@ -42,6 +44,7 @@ async function main(): Promise<void> {
 
   const dlq = new DlqManager(broker);
   const publisher = new TypedPublisher(broker);
+  const telemetry = createTelemetryClient(broker, logger);
   const notificationHandler = createNotificationHandler(logger);
 
   await broker.connect();
@@ -50,6 +53,7 @@ async function main(): Promise<void> {
     { name: TOPIC_PAYMENT_COMPLETED, numPartitions: 3 },
     { name: DLQ_TOPIC, numPartitions: 3 },
     { name: RETRY_TOPIC, numPartitions: 3 },
+    { name: TELEMETRY_TOPIC, numPartitions: 3 },
   ]);
   await dlq.ensureTopic();
 
@@ -62,6 +66,8 @@ async function main(): Promise<void> {
       handler: notificationHandler,
       attempts: 3,
       baseDelayMs: 50,
+      telemetry,
+      groupId: config.consumerGroupId,
     },
     logger,
   );
@@ -89,6 +95,16 @@ async function main(): Promise<void> {
           },
           'payment recorded',
         );
+        await telemetry.emit({
+          type: 'payment-recorded',
+          topic: message.topic,
+          eventId: payment.eventId,
+          orderId: payment.orderId,
+          partition: message.partition,
+          offset: message.offset,
+          message: `Payment ${payment.amountCents} cents (${payment.method}) recorded`,
+          concept: 'consumer-group',
+        });
         await context.commit();
       },
       {
