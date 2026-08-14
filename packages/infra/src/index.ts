@@ -4,3 +4,4 @@ export * from './retry.js';
 export * from './dlq.js';
 export * from './shutdown.js';
 export * from './publisher.js';
+export * from './telemetry.js';

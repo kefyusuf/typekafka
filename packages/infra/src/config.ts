@@ -21,6 +21,8 @@ export const BrokerEnvSchema = z.object({
   LOG_LEVEL: z
     .enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal'])
     .default('info'),
+  WEB_PORT: z.coerce.number().int().positive().default(3000),
+  TELEMETRY_GROUP_ID: z.string().trim().min(1).default('web-telemetry'),
 });
 
 export type BrokerEnv = z.infer<typeof BrokerEnvSchema>;
@@ -34,6 +36,8 @@ export interface AppConfig {
   consumerGroupId: string;
   consumerFromBeginning: boolean;
   logLevel: BrokerEnv['LOG_LEVEL'];
+  webPort: number;
+  telemetryGroupId: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -59,5 +63,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     consumerGroupId: e.CONSUMER_GROUP_ID,
     consumerFromBeginning: e.CONSUMER_FROM_BEGINNING,
     logLevel: e.LOG_LEVEL,
+    webPort: e.WEB_PORT,
+    telemetryGroupId: e.TELEMETRY_GROUP_ID,
   };
 }
