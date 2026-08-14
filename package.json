@@ -1,0 +1,32 @@
+{
+  "name": "nodejs-kafka",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Type-safe Kafka demo - TypeScript + Node.js + adapter pattern",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev:producer": "npm run build && npm run dev --workspace apps/producer",
+    "dev:consumer": "npm run build && npm run dev --workspace apps/consumer"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^22.5.0",
+    "eslint": "^9.9.0",
+    "typescript": "^5.5.4",
+    "typescript-eslint": "^8.67.0",
+    "vitest": "^2.0.5"
+  }
+}

@@ -1,0 +1,85 @@
+services:
+  kafka:
+    # Official Apache image in KRaft mode (no ZooKeeper).
+    # bitnami/kafka was pulled from Docker Hub, so we use apache/kafka instead.
+    image: apache/kafka:3.7.0
+    container_name: nodejs-kafka-kafka
+    environment:
+      # KRaft combined mode: single node runs controller + broker.
+      # Env vars use the KAFKA_ prefix and map to server.properties keys
+      # (dots -> underscores). The image auto-formats storage on first start.
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # Unique base64 UUID identifying this KRaft cluster.
+      CLUSTER_ID: "4L6g3nShT-eMCtK--X86sw"
+      # Single-node cluster: internal topics need replication factor 1.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      # Topics are created by the app's admin client, not auto-created.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: nodejs-kafka-ui
+    ports:
+      - "18080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY_URL: ""
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ---- App services (Phase 2: confluent driver, real Kafka) ----
+  # Producer and consumer talk through the Kafka cluster: the producer
+  # publishes N order+payment pairs and exits; the consumer reads them with
+  # the notification-service consumer group (parse -> retry -> DLQ -> commit).
+  # The broker keeps its KRaft logs inside the container, so `docker compose
+  # down` resets Kafka state and the next `up` replays from the beginning.
+
+  producer:
+    build:
+      context: .
+      dockerfile: apps/producer/Dockerfile
+    container_name: nodejs-kafka-producer
+    environment:
+      SERVICE_NAME: producer
+      BROKER_DRIVER: confluent
+      BROKER_BROKERS: kafka:9092
+      LOG_LEVEL: info
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  consumer:
+    build:
+      context: .
+      dockerfile: apps/consumer/Dockerfile
+    container_name: nodejs-kafka-consumer
+    environment:
+      SERVICE_NAME: consumer
+      BROKER_DRIVER: confluent
+      BROKER_BROKERS: kafka:9092
+      CONSUMER_GROUP_ID: notification-service
+      CONSUMER_FROM_BEGINNING: "true"
+      LOG_LEVEL: info
+    depends_on:
+      kafka:
+        condition: service_healthy
