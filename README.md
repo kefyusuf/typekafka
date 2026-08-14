@@ -9,6 +9,7 @@ This repo is a portfolio / reference project showing production-grade, event-dri
 - A production-shaped **consumer pipeline**: `parse → retry (exponential backoff + jitter) → DLQ → commit`.
 - **Graceful shutdown**, **structured JSON logging** (pino), **fail-fast env validation**, and a CI pipeline.
 - A full **Docker Compose** stack with a **KRaft-mode Kafka** (no ZooKeeper) and **Kafka UI**.
+- A **live flow tracker** — a web UI that places orders, watches the message move through the pipeline in real time, and streams per-step telemetry over SSE.
 
 ---
 
@@ -20,6 +21,7 @@ This repo is a portfolio / reference project showing production-grade, event-dri
 - [Quickstart](#quickstart)
   - [Option A — in-memory driver (no Docker)](#option-a--in-memory-driver-no-docker)
   - [Option B — full Docker stack](#option-b--full-docker-stack)
+  - [Option C — Web UI (recommended for learning)](#option-c--web-ui-recommended-for-learning)
 - [Configuration](#configuration)
 - [Message contract](#message-contract)
   - [Topic-safe generic types](#topic-safe-generic-types)
@@ -112,6 +114,8 @@ The adapters translate between the native client shape and a broker-agnostic `Ka
 
 Hexagonal architecture: business logic in `domain/` never imports a Kafka client. The port in `broker/` is the only seam, and `infra/` provides cross-cutting concerns (config, logging, retry, DLQ, publish).
 
+The web app (`apps/web`) publishes **telemetry events** to `telemetry.events` for every pipeline step. The web server consumes that topic in the `web-telemetry` group and broadcasts each event to connected browsers over **Server-Sent Events** (`GET /api/events`), so the flow diagram and event log update live.
+
 ### Consumer pipeline
 
 Each consumed message runs through a production pipeline (`apps/consumer/src/handler-runner.ts`):
@@ -171,13 +175,36 @@ docker compose up --build
 This starts:
 
 - **Kafka** (`apache/kafka:3.7.0`, KRaft mode, no ZooKeeper) on `localhost:9092`
-- **Kafka UI** on [http://localhost:8080](http://localhost:8080)
+- **Kafka UI** on [http://localhost:18080](http://localhost:18080)
 - **consumer** app (confluent driver, reads the `notification-service` group)
 - **producer** app (publishes order + payment events and exits)
 
 > The apps talk through the real Kafka cluster (`BROKER_DRIVER=confluent`). The broker keeps its KRaft logs inside the container, so `docker compose down` resets Kafka state and the next `up` replays from the beginning. Use `docker compose up --build` again to re-run the demo.
 
 Watch the consumer process orders and payments while the Kafka UI shows the topics, partitions, messages, and consumer group offsets live.
+
+### Option C — Web UI (recommended for learning)
+
+```bash
+docker compose up --build
+```
+
+Open [http://localhost:3000](http://localhost:3000):
+
+- **Place an order** from the form (SKU / quantity / unit price). The web
+  service publishes `orders.created` + `payments.completed` and emits
+  telemetry events for what it did.
+- **Watch the flow diagram** light up as the message moves
+  `producer → orders.created → consumer → (retry) → DLQ`.
+- **Read the live event log** — every pipeline step (`consumed`, `parsed`,
+  `retrying`, `dead-lettered`, `committed`, `payment-recorded`) with the
+  topic, partition, offset, and an educational concept tag.
+- Try a **total above 100000 cents** to trigger the simulated provider
+  timeout → retry → DLQ flow.
+
+The web UI requires real Kafka (`BROKER_DRIVER=confluent`, set by compose).
+For a no-Docker learning path, `npm run dev:consumer` still self-demos the
+in-memory broker.
 
 ---
 
@@ -197,6 +224,8 @@ All environment variables are validated **at startup** by a Zod schema (`package
 | `CONSUMER_FROM_BEGINNING` | `true` | Start reading from the earliest offset when no committed offset exists |
 | `LOG_LEVEL` | `info` | pino level: `trace` / `debug` / `info` / `warn` / `error` / `fatal` |
 | `SERVICE_NAME` | `nodejs-kafka` | Tag used in structured log records |
+| `WEB_PORT` | `3000` | Web UI HTTP port |
+| `TELEMETRY_GROUP_ID` | `web-telemetry` | Consumer group id for the telemetry event stream |
 
 See [`.env.example`](.env.example) for a documented copy-paste template.
 
@@ -269,7 +298,7 @@ The sample generators (`packages/domain/src/sample/sample-events.ts`) create det
 | **Consumer groups / offsets** | `ConsumeOptions` (manual commit, group id, concurrency) |
 | **Multi-stage Docker builds** | `apps/*/Dockerfile` |
 | **KRaft Kafka (no ZooKeeper)** | `docker-compose.yml` |
-| **Unit + integration tests** | Vitest, 31 tests, no Kafka required |
+| **Unit + integration tests** | Vitest, 42 tests, no Kafka required |
 
 ---
 
@@ -279,6 +308,7 @@ The sample generators (`packages/domain/src/sample/sample-events.ts`) create det
 apps/
   producer/          CLI that publishes order + payment events, then exits
   consumer/          long-running worker with parse → retry → DLQ → commit pipeline
+  web/               Express REST + SSE server and React flow-tracker UI
 packages/
   broker/            IMessageBroker port + in-memory / confluent adapters
   domain/            Zod schemas, event union, sample generators, notification handler
@@ -297,25 +327,29 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 | `npm run build` | Compile all packages (topological order) |
 | `npm run typecheck` | `tsc --noEmit` across all packages |
 | `npm run lint` | ESLint (flat config + typescript-eslint) |
-| `npm test` | Vitest — 31 tests, runs without any Kafka |
+| `npm test` | Vitest — 42 tests, runs without any Kafka |
 | `npm run dev:producer -- --count N` | Produce N order+payment pairs (`--delay` also accepted, ms) |
 | `npm run dev:consumer` | Consumer worker (in-memory self-demo) |
-| `docker compose up --build` | Full stack with Kafka UI on :8080 |
+| `npm run dev:web` | Web UI — Express API on :3000, Vite dev UI on :5173 (needs real Kafka) |
+| `docker compose up --build` | Full stack with Kafka UI on :18080 and web UI on :3000 |
 
 ---
 
 ## Tests
 
-Vitest, configured in `vitest.config.ts`. All 31 tests run **without Kafka** — they use the in-memory driver and mocks:
+Vitest, configured in `vitest.config.ts`. All 42 tests run **without Kafka** — they use the in-memory driver and mocks:
 
 | Suite | File | Tests |
 |---|---|---|
 | Retry behaviour | `packages/infra/test/retry.test.ts` | 4 |
 | Event schemas | `packages/domain/test/schemas.test.ts` | 6 |
+| Telemetry schema | `packages/domain/test/telemetry.test.ts` | 4 |
 | Confluent adapter (mocked driver) | `packages/broker/test/confluent.test.ts` | 12 |
 | In-memory broker | `packages/broker/test/in-memory.test.ts` | 6 |
+| Telemetry client | `packages/infra/test/telemetry.test.ts` | 3 |
 | Dead-letter queue | `packages/infra/test/dlq.test.ts` | 1 |
-| Consumer pipeline | `apps/consumer/test/pipeline.test.ts` | 2 |
+| Consumer pipeline | `apps/consumer/test/pipeline.test.ts` | 3 |
+| Web server | `apps/web/test/server.test.ts` | 3 |
 
 CI (`.github/workflows/ci.yml`) runs `npm ci` → `build` → `typecheck` → `lint` → `test` on Node 22.
 
