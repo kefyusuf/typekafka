@@ -11,6 +11,9 @@ export const RETRY_TOPIC = 'orders.retry';
 export type { OrderCreated, OrderItem } from './order-created.js';
 export type { PaymentCompleted } from './payment-completed.js';
 
+export { TELEMETRY_TOPIC, TelemetryEventSchema } from './telemetry.js';
+export type { TelemetryEvent, TelemetryEventType } from './telemetry.js';
+
 /** Discriminated union of every event in the system (keyed by `type`). */
 export type EventPayload = OrderCreated | PaymentCompleted;
 
