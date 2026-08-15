@@ -7,12 +7,14 @@ import type {
   ConsumeOptions,
   Disposer,
   KafkaMessage,
+  MessageTransaction,
   ProduceOptions,
   ProduceResult,
   TopicConfig,
 } from '../types.js';
 import type { BrokerConfig } from '../config.js';
-import { BrokerStateError } from '../errors.js';
+import { JsonCodec, type MessageCodec } from '../codec/index.js';
+import { BrokerError, BrokerStateError } from '../errors.js';
 
 interface StoredRecord {
   id: string;
@@ -20,7 +22,7 @@ interface StoredRecord {
   partition: number;
   offset: number;
   key: string | null;
-  value: unknown;
+  value: Buffer | string | null;
   headers?: Record<string, string | string[]>;
   timestamp: string;
   sequence: number;
@@ -59,7 +61,11 @@ export class InMemoryBrokerAdapter implements IMessageBroker {
   private nextSequence = 0;
   private connected = false;
 
-  constructor(private readonly config: BrokerConfig) {}
+  private readonly codec: MessageCodec;
+
+  constructor(private readonly config: BrokerConfig) {
+    this.codec = config.codec ?? new JsonCodec();
+  }
 
   get isConnected(): boolean {
     return this.connected;
@@ -115,7 +121,7 @@ export class InMemoryBrokerAdapter implements IMessageBroker {
       partition,
       offset: lastOffset,
       key: options.key ?? null,
-      value,
+      value: await this.codec.serialize(topic, value),
       headers: options.headers,
       timestamp: new Date().toISOString(),
       sequence: this.nextSequence++,
@@ -175,11 +181,17 @@ export class InMemoryBrokerAdapter implements IMessageBroker {
     return this.consume(topics, handler, { ...options, fromBeginning: false });
   }
 
+  async beginTransaction(): Promise<MessageTransaction> {
+    throw new BrokerError(
+      'In-memory broker does not support transactions; use BROKER_DRIVER=confluent (see the driver capability matrix).',
+    );
+  }
+
   private async dispatch(record: StoredRecord, subscription: Subscription): Promise<void> {
     const message: KafkaMessage<unknown> = {
       topic: record.topic,
       key: record.key,
-      value: record.value,
+      value: await this.codec.deserialize(record.topic, record.value),
       headers: record.headers,
       partition: record.partition,
       offset: String(record.offset),

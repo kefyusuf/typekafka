@@ -115,4 +115,13 @@ describe('InMemoryBrokerAdapter', () => {
 
     await broker.disconnect();
   });
+
+  it('rejects beginTransaction with a driver-guidance error', async () => {
+    const broker = makeBroker();
+    await broker.connect();
+
+    await expect(broker.beginTransaction()).rejects.toThrow(/confluent/);
+
+    await broker.disconnect();
+  });
 });

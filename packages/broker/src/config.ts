@@ -1,3 +1,5 @@
+import type { MessageCodec } from './codec/index.js';
+
 export type BrokerDriver = 'in-memory' | 'confluent';
 
 export interface BrokerConnectionConfig {
@@ -37,4 +39,6 @@ export interface BrokerConfig {
   memoryAutoCommit?: boolean;
   /** Forwarded to the underlying driver for structured logging. */
   logger?: BrokerLogger;
+  /** Message (de)serialization strategy. Defaults to `JsonCodec`. */
+  codec?: MessageCodec;
 }

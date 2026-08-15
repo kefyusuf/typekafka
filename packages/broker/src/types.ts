@@ -66,3 +66,18 @@ export type ConsumeHandler<T> = (
 ) => Promise<void>;
 
 export type Disposer = () => Promise<void>;
+
+export interface TransactionOptions {
+  /** Transaction-level timeout in milliseconds. Reserved for driver options. */
+  timeoutMs?: number;
+}
+
+/**
+ * A Kafka transaction. Messages produced inside the transaction become
+ * visible to `read_committed` consumers only after `commit()` resolves.
+ */
+export interface MessageTransaction {
+  produce<T>(topic: string, value: T, options?: ProduceOptions): Promise<ProduceResult>;
+  commit(): Promise<void>;
+  abort(): Promise<void>;
+}

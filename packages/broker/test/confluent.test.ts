@@ -433,4 +433,125 @@ describe('ConfluentKafkaAdapter', () => {
     const [consumerConfig] = mocks.consumerCreate.mock.calls[0] ?? [];
     expect(consumerConfig).toMatchObject({ kafkaJS: { groupId: 'test-app-consumer' } });
   });
+
+  describe('transactions', () => {
+    it('begins a transaction on a transactional producer and commits', async () => {
+      const tx = {
+        send: vi
+          .fn()
+          .mockResolvedValue([
+            { topicName: 'orders.created', partition: 1, baseOffset: '50' },
+          ]),
+        commit: vi.fn().mockResolvedValue(undefined),
+        abort: vi.fn().mockResolvedValue(undefined),
+      };
+      const producer = fakeProducer({ transaction: vi.fn().mockResolvedValue(tx) });
+      mocks.producerCreate.mockReturnValue(producer);
+
+      const broker = makeBroker();
+      await broker.connect();
+
+      const transaction = await broker.beginTransaction();
+      const result = await transaction.produce('orders.created', { orderId: 'ORD-1' }, { key: 'ORD-1' });
+      await transaction.commit();
+
+      const [producerConfig] = mocks.producerCreate.mock.calls[0] ?? [];
+      expect(producerConfig).toMatchObject({
+        kafkaJS: {
+          idempotent: true,
+          acks: -1,
+          transactionalId: 'test-app-tx',
+          allowAutoTopicCreation: false,
+        },
+      });
+      expect(producer.transaction).toHaveBeenCalledOnce();
+      expect(tx.send).toHaveBeenCalledWith({
+        topic: 'orders.created',
+        messages: [
+          {
+            value: JSON.stringify({ orderId: 'ORD-1' }),
+            key: 'ORD-1',
+            headers: undefined,
+            partition: undefined,
+          },
+        ],
+      });
+      expect(result).toEqual({ topic: 'orders.created', partition: 1, offset: '50' });
+      expect(tx.commit).toHaveBeenCalledOnce();
+      expect(tx.abort).not.toHaveBeenCalled();
+
+      await broker.disconnect();
+    });
+
+    it('allows the caller to abort instead of commit', async () => {
+      const tx = {
+        send: vi
+          .fn()
+          .mockResolvedValue([
+            { topicName: 'orders.created', partition: 0, baseOffset: '0' },
+          ]),
+        commit: vi.fn().mockResolvedValue(undefined),
+        abort: vi.fn().mockResolvedValue(undefined),
+      };
+      const producer = fakeProducer({ transaction: vi.fn().mockResolvedValue(tx) });
+      mocks.producerCreate.mockReturnValue(producer);
+
+      const broker = makeBroker();
+      await broker.connect();
+
+      const transaction = await broker.beginTransaction();
+      await transaction.produce('orders.created', { orderId: 'ORD-1' });
+      await transaction.abort();
+
+      expect(tx.abort).toHaveBeenCalledOnce();
+      expect(tx.commit).not.toHaveBeenCalled();
+
+      await broker.disconnect();
+    });
+
+    it('rejects when the driver returns no produce metadata', async () => {
+      const tx = {
+        send: vi.fn().mockResolvedValue([]),
+        commit: vi.fn().mockResolvedValue(undefined),
+        abort: vi.fn().mockResolvedValue(undefined),
+      };
+      const producer = fakeProducer({ transaction: vi.fn().mockResolvedValue(tx) });
+      mocks.producerCreate.mockReturnValue(producer);
+
+      const broker = makeBroker();
+      await broker.connect();
+
+      const transaction = await broker.beginTransaction();
+      await expect(
+        transaction.produce('orders.created', { orderId: 'ORD-1' }),
+      ).rejects.toThrow(/no metadata returned/);
+
+      await transaction.abort();
+      expect(tx.commit).not.toHaveBeenCalled();
+
+      await broker.disconnect();
+    });
+
+    it('surfaces a transaction produce failure and does not commit', async () => {
+      const tx = {
+        send: vi.fn().mockRejectedValue(new Error('broker down')),
+        commit: vi.fn().mockResolvedValue(undefined),
+        abort: vi.fn().mockResolvedValue(undefined),
+      };
+      const producer = fakeProducer({ transaction: vi.fn().mockResolvedValue(tx) });
+      mocks.producerCreate.mockReturnValue(producer);
+
+      const broker = makeBroker();
+      await broker.connect();
+
+      const transaction = await broker.beginTransaction();
+      await expect(transaction.produce('orders.created', {})).rejects.toThrow(/failed/);
+
+      await transaction.abort();
+      expect(tx.send).toHaveBeenCalledOnce();
+      expect(tx.commit).not.toHaveBeenCalled();
+
+      await broker.disconnect();
+    });
+  });
 });
