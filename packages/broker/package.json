@@ -24,6 +24,7 @@
     "typescript": "^5.5.4"
   },
   "dependencies": {
-    "@confluentinc/kafka-javascript": "^1.10.0"
+    "@confluentinc/kafka-javascript": "^1.10.0",
+    "@confluentinc/schemaregistry": "^1.10.0"
   }
 }
