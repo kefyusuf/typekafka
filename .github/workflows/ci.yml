@@ -31,3 +31,19 @@ jobs:
 
       - name: Test
         run: npm test
+
+  compose-config:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        profile: [base, schema-registry, observability, mirror, security]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate compose file
+        run: |
+          if [ "${{ matrix.profile }}" = "base" ]; then
+            docker compose config
+          else
+            docker compose --profile "${{ matrix.profile }}" config
+          fi
