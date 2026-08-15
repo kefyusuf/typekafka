@@ -15,7 +15,7 @@ Both pages describe real Kafka semantics and point out where this repo's in-memo
 
 Follow the README quickstart, in the recommended order:
 
-1. **Docker path first** — [Standard usage — Docker stack](../README.md#standard-usage--docker-stack). Brings up Kafka (KRaft), the producer, the consumer and the web flow tracker; watch a message move through `parse -> retry -> DLQ -> commit` end to end, and trigger a retry + DLQ with an oversized order.
+1. **Docker path first** — [Standard usage — Docker stack](../README.md#standard-usage--docker-stack). Brings up Kafka (KRaft), the producer, the consumer and the web flow tracker; watch a message move through `parse → retry → DLQ → commit` end to end, and trigger a retry + DLQ with an oversized order.
 2. **In-memory path second** — [Alternative — in-memory driver (no Docker)](../README.md#alternative--in-memory-driver-no-docker). The same port contract with zero dependencies; the consumer self-generates a 5-event sample workload, so the whole pipeline runs in one process.
 
 For what changes when you switch drivers, see the [driver-switching guide](./guides/driver-switching.md).
@@ -27,7 +27,7 @@ Now read the code that made the demo work, in this order — each file is the de
 1. `packages/broker/src/port.ts` — the `IMessageBroker` interface: the single seam everything talks to, and the contract both drivers implement.
 2. `packages/broker/src/factory.ts` — `createBroker()`: how `BROKER_DRIVER` picks an adapter behind the port.
 3. `packages/broker/src/adapters/in-memory.ts` — the zero-dependency `EventEmitter` broker that emulates topics, partitions and offsets so the same app code runs without Kafka.
-4. `apps/consumer/src/handler-runner.ts` — `createHandlerRunner`: the production pipeline `parse -> retry -> DLQ -> commit`.
+4. `apps/consumer/src/handler-runner.ts` — `createHandlerRunner`: the production pipeline `parse → retry → DLQ → commit`.
 5. `packages/infra/src/dlq.ts` — `DlqManager`: how failed messages become `DlqEntry` records on `orders.dlq` instead of being silently dropped.
 6. `packages/infra/src/publisher.ts` — `TypedPublisher`: compile-time topic-to-schema binding plus runtime validation, so the broker never sees an invalid envelope.
 

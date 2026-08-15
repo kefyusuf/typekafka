@@ -38,7 +38,7 @@ docker-compose.yml    local Kafka stack for manual verification
 
 ## Pull requests
 
-- Use the template in `PULL_REQUEST_TEMPLATE.md`
+- Use the template in `.github/PULL_REQUEST_TEMPLATE.md`
 - Describe the change, the driver used for manual verification (`in-memory` or `confluent`), and the test result
 
 ## Reporting issues

@@ -28,7 +28,7 @@ Offsets can be committed two ways:
 
 ## At-least-once in this repo
 
-The `notification-service` consumer runs each message through the pipeline in `apps/consumer/src/handler-runner.ts`: `parse -> retry -> DLQ -> commit`.
+The `notification-service` consumer runs each message through the pipeline in `apps/consumer/src/handler-runner.ts`: `parse → retry → DLQ → commit`.
 
 The offset is committed **only after the handler succeeds**. If the message fails to parse, or the handler exhausts its retries, the message is written to `orders.dlq` (`DlqManager.deadLetter`, `packages/infra/src/dlq.ts`) and only then committed. The DLQ keeps the original payload plus diagnostics (error, attempts, and headers such as `dlq.original-topic`), so no message is silently dropped — it is either processed, or dead-lettered for inspection and replay.
 
@@ -41,6 +41,6 @@ One consumer processes the messages of a given partition **serially** — that i
 `ConsumeOptions` (`packages/broker/src/types.ts`) exposes two knobs:
 
 - `concurrency` — declared in `ConsumeOptions` as the number of concurrent handler invocations, defaulting to `1`. Today neither adapter reads this field: the confluent adapter never forwards it to `consumer.run`, so serial processing comes from the kafka.js `eachMessage` default (`concurrency: 1`), and the in-memory driver dispatches every message fire-and-forget with no serialization at all.
-- `manualCommit` — when `true`, offsets are committed only after the handler resolves; when `false`, the adapter commits on resolve (the kafka.js `autoCommit` flag, `packages/broker/src/adapters/confluent.ts`).
+- `manualCommit` — when `true`, offsets are committed only after the handler resolves; when `false`, the kafka.js auto-commit path commits periodically (`packages/broker/src/adapters/confluent.ts`).
 
-In practice: the `notification-service` consumer runs with `manualCommit: true`, committing each offset only after the `parse -> retry -> DLQ -> commit` pipeline finishes, while the `web-telemetry` group auto-commits. Per-partition serial processing on real Kafka comes from the kafka.js `eachMessage` default, not from `ConsumeOptions.concurrency`.
+In practice: the `notification-service` consumer runs with `manualCommit: true`, committing each offset only after the `parse → retry → DLQ → commit` pipeline finishes, while the `web-telemetry` group auto-commits. Per-partition serial processing on real Kafka comes from the kafka.js `eachMessage` default, not from `ConsumeOptions.concurrency`.
