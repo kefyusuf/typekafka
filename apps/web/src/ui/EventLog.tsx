@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import type { TelemetryEvent, TelemetryEventType } from '@nodejs-kafka/domain';
 
 interface Props {
@@ -30,32 +31,50 @@ export function EventLog({ events }: Props) {
       <h2>Live event log</h2>
       {events.length === 0 && <p>No events yet — place an order.</p>}
       <ul style={{ listStyle: 'none', padding: 0 }}>
-        {events.map((event, i) => (
-          <li
-            key={`${event.eventId}-${i}`}
-            style={{ display: 'flex', gap: 12, padding: '8px 0', borderBottom: '1px solid #eee' }}
-          >
-            <span
-              style={{
-                background: TYPE_COLORS[event.type],
-                color: '#fff',
-                borderRadius: 4,
-                padding: '2px 8px',
-                fontSize: 12,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {event.type}
-            </span>
-            <span style={{ fontFamily: 'monospace', fontSize: 13 }}>
-              {event.topic}#{event.partition}@{event.offset}
-            </span>
-            <span style={{ flex: 1 }}>{event.message}</span>
-            <span title={CONCEPT_EXPLANATION[event.concept] ?? ''} style={{ color: '#666', fontSize: 13 }}>
-              {event.concept}
-            </span>
-          </li>
-        ))}
+        {events.map((event, i) => {
+          const isNewRequest = i === 0 || events[i - 1]?.orderId !== event.orderId;
+          return (
+            <Fragment key={`${event.eventId}-${i}`}>
+              {isNewRequest && (
+                <li style={{ marginTop: i === 0 ? 0 : 12 }}>
+                  <hr
+                    style={{
+                      border: 'none',
+                      borderTop: '1px dashed #ccc',
+                      margin: '0 0 12px',
+                    }}
+                  />
+                  <span style={{ color: '#666', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
+                    Order {event.orderId}
+                  </span>
+                </li>
+              )}
+              <li
+                style={{ display: 'flex', gap: 12, padding: '8px 0', borderBottom: '1px solid #eee' }}
+              >
+                <span
+                  style={{
+                    background: TYPE_COLORS[event.type],
+                    color: '#fff',
+                    borderRadius: 4,
+                    padding: '2px 8px',
+                    fontSize: 12,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {event.type}
+                </span>
+                <span style={{ fontFamily: 'monospace', fontSize: 13 }}>
+                  {event.topic}#{event.partition}@{event.offset}
+                </span>
+                <span style={{ flex: 1 }}>{event.message}</span>
+                <span title={CONCEPT_EXPLANATION[event.concept] ?? ''} style={{ color: '#666', fontSize: 13 }}>
+                  {event.concept}
+                </span>
+              </li>
+            </Fragment>
+          );
+        })}
       </ul>
     </div>
   );
