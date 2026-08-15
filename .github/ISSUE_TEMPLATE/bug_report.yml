@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a bug in the nodejs-kafka reference project
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to reproduce
+      description: How do you trigger the bug? Include commands and code snippets.
+      placeholder: |
+        1. Run `npm run dev:producer`
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected-vs-actual
+    attributes:
+      label: Expected vs actual behavior
+      description: What did you expect to happen, and what actually happened?
+    validations:
+      required: true
+  - type: dropdown
+    id: driver
+    attributes:
+      label: Kafka driver used
+      description: Which driver were you using when you hit the bug?
+      options:
+        - in-memory
+        - confluent
+        - not sure
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Node version, Docker compose version, and operating system.
+      placeholder: |
+        Node: 22.x
+        Docker compose: 2.x
+        OS: ...
+    validations:
+      required: false

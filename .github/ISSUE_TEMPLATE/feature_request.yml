@@ -1,0 +1,43 @@
+name: Feature request
+description: Propose a new feature for the nodejs-kafka reference project
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem-statement
+    attributes:
+      label: Problem statement
+      description: What problem would this feature solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed solution
+      description: How do you think the feature should work?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches did you consider, if any?
+    validations:
+      required: false
+  - type: dropdown
+    id: pattern-scope
+    attributes:
+      label: Suggested pattern scope
+      description: Which docs/guides pattern does this feature belong to, if any?
+      options:
+        - schema-registry
+        - retry-topics
+        - outbox
+        - compacted-topics
+        - observability
+        - multi-cluster
+        - security
+        - docs
+        - other
+    validations:
+      required: false
