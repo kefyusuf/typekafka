@@ -7,6 +7,7 @@ import {
   createSamplePayment,
 } from '@nodejs-kafka/domain';
 import {
+  buildBrokerConfig,
   createLogger,
   loadConfig,
   registerGracefulShutdown,
@@ -29,16 +30,7 @@ async function main(): Promise<void> {
   const count = Math.max(1, Number.parseInt(values.count ?? '10', 10));
   const delayMs = Math.max(0, Number.parseInt(values.delay ?? '500', 10));
 
-  const broker = createBroker({
-    driver: config.driver,
-    connection: {
-      brokers: config.brokers,
-      clientId: config.clientId,
-      sasl: config.sasl,
-    },
-    memoryAutoCommit: config.memoryAutoCommit,
-    logger,
-  });
+  const broker = createBroker(buildBrokerConfig(config, { logger }));
 
   registerGracefulShutdown(
     [

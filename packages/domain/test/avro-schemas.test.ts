@@ -3,7 +3,6 @@ import {
   eventSchemas,
   topicToAvroSchema,
   avroSubject,
-  TOPIC_ORDER_CREATED,
   TOPIC_PAYMENT_COMPLETED,
   type EventTopic,
 } from '../src/index.js';
