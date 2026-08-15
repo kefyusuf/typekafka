@@ -11,6 +11,7 @@ import type {
   TopicConfig,
 } from '../types.js';
 import type { BrokerConfig, BrokerLogger } from '../config.js';
+import { JsonCodec, type MessageCodec } from '../codec/index.js';
 import { BrokerError, BrokerStateError } from '../errors.js';
 
 const SECURITY_PROTOCOL_PLAIN = 'plaintext';
@@ -29,21 +30,6 @@ function nextOffset(offset: string): string {
 function keyToString(key: Buffer | string | null | undefined): string | null {
   if (key === null || key === undefined) return null;
   return Buffer.isBuffer(key) ? key.toString('utf8') : String(key);
-}
-
-/**
- * Deserialize the raw payload. Falls back to the raw text when the payload is
- * not valid JSON so the app-layer Zod validation still runs and can route the
- * message to the DLQ instead of reprocessing it forever.
- */
-function deserializeValue(value: Buffer | string | null | undefined): unknown {
-  if (value === null || value === undefined) return null;
-  const text = Buffer.isBuffer(value) ? value.toString('utf8') : String(value);
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return text;
-  }
 }
 
 function toKafkaHeaders(
@@ -120,7 +106,11 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
   private consumers = new Set<ConsumerHandle>();
   private connected = false;
 
-  constructor(private readonly config: BrokerConfig) {}
+  private readonly codec: MessageCodec;
+
+  constructor(private readonly config: BrokerConfig) {
+    this.codec = config.codec ?? new JsonCodec();
+  }
 
   get isConnected(): boolean {
     return this.connected;
@@ -192,7 +182,7 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
         topic,
         messages: [
           {
-            value: JSON.stringify(value) ?? null,
+            value: await this.codec.serialize(topic, value),
             key: options.key ?? null,
             headers: toKafkaHeaders(options.headers),
             partition: options.partition,
@@ -255,7 +245,7 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
           topic,
           partition,
           key: keyToString(message.key),
-          value: deserializeValue(message.value) as T,
+          value: (await this.codec.deserialize(topic, message.value)) as T,
           headers: fromKafkaHeaders(message.headers),
           offset: message.offset,
           timestamp: message.timestamp,
