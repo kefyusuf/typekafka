@@ -9,6 +9,7 @@ This repo is a portfolio / reference project showing production-grade, event-dri
 - A production-shaped **consumer pipeline**: `parse → retry (exponential backoff + jitter) → DLQ → commit`.
 - **Graceful shutdown**, **structured JSON logging** (pino), **fail-fast env validation**, and a CI pipeline.
 - A full **Docker Compose** stack with a **KRaft-mode Kafka** (no ZooKeeper) and **Kafka UI**.
+- Curated **Schema Registry + Avro** schemas (schema evolution with backward compatibility) behind the same codec seam.
 - A **live flow tracker** — a web UI that places orders, watches the message move through the pipeline in real time, and streams per-step telemetry over SSE.
 
 ---
@@ -240,6 +241,7 @@ In-memory mode uses the same port contract as real Kafka, so the semantics (topi
 | SASL/TLS/ACL | ❌ | ✅ |
 
 Step-by-step: [docs/guides/driver-switching.md](docs/guides/driver-switching.md)
+Schema evolution with Schema Registry + Avro: [docs/guides/schema-registry.md](docs/guides/schema-registry.md)
 
 ---
 
@@ -254,6 +256,7 @@ All environment variables are validated **at startup** by a Zod schema (`package
 | `BROKER_CLIENT_ID` | `nodejs-kafka-demo` | Kafka client id |
 | `BROKER_SASL_USERNAME` | — | SASL/PLAIN username (only if required) |
 | `BROKER_SASL_PASSWORD` | — | SASL/PLAIN password (only if required) |
+| `SCHEMA_REGISTRY_URL` | (empty) | Schema Registry URL; enables the Avro codec (driver must be `confluent`); empty → JSON codec |
 | `BROKER_MEMORY_AUTO_COMMIT` | `true` | In-memory driver: commit offsets automatically after handler resolve |
 | `CONSUMER_GROUP_ID` | `notification-service` | Consumer group id for both consumers |
 | `CONSUMER_FROM_BEGINNING` | `true` | Start reading from the earliest offset when no committed offset exists |
@@ -365,7 +368,8 @@ The React UI is served statically on the same origin (see `apps/web/src/ui`).
 | Concept | Where |
 |---|---|
 | **Ports & Adapters** (hexagonal) | `packages/broker/src/port.ts`, `packages/broker/src/factory.ts` |
-| **Pluggable serialization** (JSON codec; Avro lands in Phase 2) | `packages/broker/src/codec/` |
+| **Pluggable serialization** (JSON default; Avro via Schema Registry) | `packages/broker/src/codec/` |
+| **Schema Registry + Avro** (curated schemas, BACKWARD compat) | `packages/broker/src/codec/avro.ts`, `packages/domain/src/events/avro-schemas.ts` |
 | **Type-safe messaging** (compile + runtime) | Zod schemas + `parseEvent()` + `TypedPublisher` |
 | **Discriminated union events** | `EventPayload`, `EventOf<Topic>`, `topicToType` |
 | **Dead Letter Queue** | `packages/infra/src/dlq.ts`, `apps/consumer/src/handler-runner.ts` |
@@ -379,7 +383,7 @@ The React UI is served statically on the same origin (see `apps/web/src/ui`).
 | **Consumer groups / offsets** | `ConsumeOptions` (manual commit, group id, concurrency) |
 | **Multi-stage Docker builds** | `apps/*/Dockerfile` |
 | **KRaft Kafka (no ZooKeeper)** | `docker-compose.yml` |
-| **Unit + integration tests** | Vitest, 59 tests, no Kafka required |
+| **Unit + integration tests** | Vitest, 73 tests, no Kafka required |
 
 ---
 
@@ -408,7 +412,7 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 | `npm run build` | Compile all packages (topological order) |
 | `npm run typecheck` | `tsc --noEmit` across all packages |
 | `npm run lint` | ESLint (flat config + typescript-eslint) |
-| `npm test` | Vitest — 59 tests, runs without any Kafka |
+| `npm test` | Vitest — 73 tests, runs without any Kafka |
 | `npm run dev:producer -- --count N` | Produce N order+payment pairs (`--delay` also accepted, ms) |
 | `npm run dev:consumer` | Consumer worker (in-memory self-demo) |
 | `npm run dev:web` | Web UI — Express API on :3000, Vite dev UI on :5173 (needs real Kafka) |
@@ -418,12 +422,15 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 
 ## Tests
 
-Vitest, configured in `vitest.config.ts`. All 59 tests run **without Kafka** — they use the in-memory driver and mocks:
+Vitest, configured in `vitest.config.ts`. All 73 tests run **without Kafka** — they use the in-memory driver and mocks:
 
 | Suite | File | Tests |
 |---|---|---|
 | Retry behaviour | `packages/infra/test/retry.test.ts` | 4 |
 | Event schemas | `packages/domain/test/schemas.test.ts` | 6 |
+| Avro schemas (curated) | `packages/domain/test/avro-schemas.test.ts` | 3 |
+| Avro codec (Schema Registry) | `packages/broker/test/avro.test.ts` | 7 |
+| Broker config wiring | `packages/infra/test/broker.test.ts` | 4 |
 | Telemetry schema | `packages/domain/test/telemetry.test.ts` | 4 |
 | Confluent adapter (mocked driver) | `packages/broker/test/confluent.test.ts` | 13 |
 | Transactions | `packages/broker/test/confluent.test.ts` (transactions block) | 4 |
@@ -447,4 +454,4 @@ CI (`.github/workflows/ci.yml`) runs `npm ci` → `build` → `typecheck` → `l
 - [ ] Retry topic + scheduled retry (instead of in-process backoff only)
 - [ ] Kafka Streams–style aggregation / compacted topics (customer 360 view)
 - [ ] Exactly-once / transactional outbox pattern
-- [ ] Schema Registry + Avro serialization for schema evolution
+- [x] Schema Registry + Avro serialization for schema evolution
