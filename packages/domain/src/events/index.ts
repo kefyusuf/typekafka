@@ -55,3 +55,5 @@ export function parseEvent<Topic extends EventTopic>(
 ): EventOf<Topic> {
   return eventSchemas[topic].parse(value);
 }
+
+export { avroSubject, topicToAvroSchema } from './avro-schemas.js';
