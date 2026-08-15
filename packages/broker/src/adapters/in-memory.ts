@@ -7,13 +7,14 @@ import type {
   ConsumeOptions,
   Disposer,
   KafkaMessage,
+  MessageTransaction,
   ProduceOptions,
   ProduceResult,
   TopicConfig,
 } from '../types.js';
 import type { BrokerConfig } from '../config.js';
 import { JsonCodec, type MessageCodec } from '../codec/index.js';
-import { BrokerStateError } from '../errors.js';
+import { BrokerError, BrokerStateError } from '../errors.js';
 
 interface StoredRecord {
   id: string;
@@ -178,6 +179,12 @@ export class InMemoryBrokerAdapter implements IMessageBroker {
     options: ConsumeOptions = {},
   ): Promise<Disposer> {
     return this.consume(topics, handler, { ...options, fromBeginning: false });
+  }
+
+  async beginTransaction(): Promise<MessageTransaction> {
+    throw new BrokerError(
+      'In-memory broker does not support transactions; use BROKER_DRIVER=confluent (see the driver capability matrix).',
+    );
   }
 
   private async dispatch(record: StoredRecord, subscription: Subscription): Promise<void> {

@@ -1,5 +1,6 @@
 import type {
   IMessageBroker,
+  MessageTransaction,
   ProduceOptions,
   ProduceResult,
 } from '@nodejs-kafka/broker';
@@ -33,6 +34,17 @@ export class TypedPublisher {
       headers: options?.headers,
       partition: options?.partition,
     });
+  }
+
+  /** Publish inside an existing broker transaction (transactional outbox). */
+  async publishTx<Topic extends EventTopic>(
+    transaction: MessageTransaction,
+    topic: Topic,
+    payload: EventOf<Topic>,
+    options?: ProduceOptions,
+  ): Promise<ProduceResult> {
+    const parsed = parseEvent(topic, payload);
+    return transaction.produce(topic, parsed, options);
   }
 
   async publishOrder(order: OrderCreated, options?: ProduceOptions): Promise<ProduceResult> {

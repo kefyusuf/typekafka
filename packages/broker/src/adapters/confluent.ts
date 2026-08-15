@@ -6,9 +6,11 @@ import type {
   ConsumeOptions,
   Disposer,
   KafkaMessage,
+  MessageTransaction,
   ProduceOptions,
   ProduceResult,
   TopicConfig,
+  TransactionOptions,
 } from '../types.js';
 import type { BrokerConfig, BrokerLogger } from '../config.js';
 import { JsonCodec, type MessageCodec } from '../codec/index.js';
@@ -101,6 +103,8 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
   private kafka?: KafkaJS.Kafka;
   private producer?: KafkaJS.Producer;
   private producerConnected = false;
+  private txProducer?: KafkaJS.Producer;
+  private txProducerConnected = false;
   private admin?: KafkaJS.Admin;
   private adminConnected = false;
   private consumers = new Set<ConsumerHandle>();
@@ -134,6 +138,14 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
         this.producer.disconnect(),
       ]);
       this.producerConnected = false;
+    }
+
+    if (this.txProducer && this.txProducerConnected) {
+      await Promise.allSettled([
+        this.txProducer.flush({ timeout: PRODUCER_FLUSH_TIMEOUT_MS }),
+        this.txProducer.disconnect(),
+      ]);
+      this.txProducerConnected = false;
     }
 
     if (this.admin && this.adminConnected) {
@@ -283,6 +295,45 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
     return this.consume(topics, handler, { ...options, fromBeginning: false });
   }
 
+  async beginTransaction(_options?: TransactionOptions): Promise<MessageTransaction> {
+    try {
+      const producer = await this.getTransactionalProducer();
+      const tx = await producer.transaction();
+      return {
+        produce: async <T>(topic: string, value: T, options: ProduceOptions = {}) => {
+          try {
+            const [record] = await tx.send({
+              topic,
+              messages: [
+                {
+                  value: await this.codec.serialize(topic, value),
+                  key: options.key ?? null,
+                  headers: toKafkaHeaders(options.headers),
+                  partition: options.partition,
+                },
+              ],
+            });
+            return {
+              topic: record?.topicName ?? topic,
+              partition: record?.partition ?? 0,
+              offset: record?.baseOffset?.toString() ?? record?.offset ?? '',
+            };
+          } catch (error) {
+            throw toBrokerError(`transaction produce to "${topic}" failed`, error);
+          }
+        },
+        commit: async () => {
+          await tx.commit();
+        },
+        abort: async () => {
+          await tx.abort();
+        },
+      };
+    } catch (error) {
+      throw toBrokerError('beginTransaction failed', error);
+    }
+  }
+
   private async getProducer(): Promise<KafkaJS.Producer> {
     await this.ensureReady();
     if (!this.producer) {
@@ -299,6 +350,25 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
       this.producerConnected = true;
     }
     return this.producer;
+  }
+
+  private async getTransactionalProducer(): Promise<KafkaJS.Producer> {
+    await this.ensureReady();
+    if (!this.txProducer) {
+      this.txProducer = this.kafka!.producer({
+        kafkaJS: {
+          idempotent: true,
+          acks: -1,
+          transactionalId: `${this.config.connection.clientId}-tx`,
+          allowAutoTopicCreation: false,
+        },
+      });
+    }
+    if (!this.txProducerConnected) {
+      await this.txProducer.connect();
+      this.txProducerConnected = true;
+    }
+    return this.txProducer;
   }
 
   private async getAdmin(): Promise<KafkaJS.Admin> {

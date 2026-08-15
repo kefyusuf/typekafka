@@ -2,9 +2,11 @@ import type {
   ConsumeHandler,
   ConsumeOptions,
   Disposer,
+  MessageTransaction,
   ProduceOptions,
   ProduceResult,
   TopicConfig,
+  TransactionOptions,
 } from './types.js';
 
 /**
@@ -40,4 +42,11 @@ export interface IMessageBroker {
     handler: ConsumeHandler<T>,
     options?: ConsumeOptions,
   ): Promise<Disposer>;
+
+  /**
+   * Begin a transaction. Produces via the returned `MessageTransaction` are
+   * atomic with `commit()` / `abort()`. Confluent-only: the in-memory driver
+   * rejects this with a descriptive error (see the driver capability matrix).
+   */
+  beginTransaction(options?: TransactionOptions): Promise<MessageTransaction>;
 }
