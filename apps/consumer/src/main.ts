@@ -11,6 +11,7 @@ import {
   parseEvent,
 } from '@nodejs-kafka/domain';
 import {
+  buildBrokerConfig,
   createLogger,
   createTelemetryClient,
   loadConfig,
@@ -31,16 +32,13 @@ async function main(): Promise<void> {
     'consumer starting',
   );
 
-  const broker = createBroker({
-    driver: config.driver,
-    connection: {
-      brokers: config.brokers,
-      clientId: `${config.clientId}-consumer`,
-      sasl: config.sasl,
-    },
-    memoryAutoCommit: false,
-    logger,
-  });
+  const broker = createBroker(
+    buildBrokerConfig(config, {
+      clientIdSuffix: '-consumer',
+      memoryAutoCommit: false,
+      logger,
+    }),
+  );
 
   const dlq = new DlqManager(broker);
   const publisher = new TypedPublisher(broker);

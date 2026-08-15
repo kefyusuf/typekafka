@@ -8,6 +8,7 @@ import {
   TOPIC_PAYMENT_COMPLETED,
 } from '@nodejs-kafka/domain';
 import {
+  buildBrokerConfig,
   createLogger,
   loadConfig,
   registerGracefulShutdown,
@@ -24,15 +25,9 @@ async function main(): Promise<void> {
     );
   }
 
-  const broker = createBroker({
-    driver: config.driver,
-    connection: {
-      brokers: config.brokers,
-      clientId: `${config.clientId}-web`,
-      sasl: config.sasl,
-    },
-    logger,
-  });
+  const broker = createBroker(
+    buildBrokerConfig(config, { clientIdSuffix: '-web', logger }),
+  );
 
   await broker.connect();
   await broker.createTopics([
