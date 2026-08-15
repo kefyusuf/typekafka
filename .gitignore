@@ -28,3 +28,7 @@ Thumbs.db
 
 # Vitest
 test-results/
+
+# Agent/planning artifacts (local only, never commit)
+.superpowers/
+docs/superpowers/
