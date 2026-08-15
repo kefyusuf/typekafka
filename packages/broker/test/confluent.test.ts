@@ -485,7 +485,11 @@ describe('ConfluentKafkaAdapter', () => {
 
     it('allows the caller to abort instead of commit', async () => {
       const tx = {
-        send: vi.fn().mockResolvedValue([]),
+        send: vi
+          .fn()
+          .mockResolvedValue([
+            { topicName: 'orders.created', partition: 0, baseOffset: '0' },
+          ]),
         commit: vi.fn().mockResolvedValue(undefined),
         abort: vi.fn().mockResolvedValue(undefined),
       };
@@ -500,6 +504,29 @@ describe('ConfluentKafkaAdapter', () => {
       await transaction.abort();
 
       expect(tx.abort).toHaveBeenCalledOnce();
+      expect(tx.commit).not.toHaveBeenCalled();
+
+      await broker.disconnect();
+    });
+
+    it('rejects when the driver returns no produce metadata', async () => {
+      const tx = {
+        send: vi.fn().mockResolvedValue([]),
+        commit: vi.fn().mockResolvedValue(undefined),
+        abort: vi.fn().mockResolvedValue(undefined),
+      };
+      const producer = fakeProducer({ transaction: vi.fn().mockResolvedValue(tx) });
+      mocks.producerCreate.mockReturnValue(producer);
+
+      const broker = makeBroker();
+      await broker.connect();
+
+      const transaction = await broker.beginTransaction();
+      await expect(
+        transaction.produce('orders.created', { orderId: 'ORD-1' }),
+      ).rejects.toThrow(/no metadata returned/);
+
+      await transaction.abort();
       expect(tx.commit).not.toHaveBeenCalled();
 
       await broker.disconnect();

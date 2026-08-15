@@ -379,7 +379,7 @@ The React UI is served statically on the same origin (see `apps/web/src/ui`).
 | **Consumer groups / offsets** | `ConsumeOptions` (manual commit, group id, concurrency) |
 | **Multi-stage Docker builds** | `apps/*/Dockerfile` |
 | **KRaft Kafka (no ZooKeeper)** | `docker-compose.yml` |
-| **Unit + integration tests** | Vitest, 58 tests, no Kafka required |
+| **Unit + integration tests** | Vitest, 59 tests, no Kafka required |
 
 ---
 
@@ -408,7 +408,7 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 | `npm run build` | Compile all packages (topological order) |
 | `npm run typecheck` | `tsc --noEmit` across all packages |
 | `npm run lint` | ESLint (flat config + typescript-eslint) |
-| `npm test` | Vitest — 58 tests, runs without any Kafka |
+| `npm test` | Vitest — 59 tests, runs without any Kafka |
 | `npm run dev:producer -- --count N` | Produce N order+payment pairs (`--delay` also accepted, ms) |
 | `npm run dev:consumer` | Consumer worker (in-memory self-demo) |
 | `npm run dev:web` | Web UI — Express API on :3000, Vite dev UI on :5173 (needs real Kafka) |
@@ -418,7 +418,7 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 
 ## Tests
 
-Vitest, configured in `vitest.config.ts`. All 58 tests run **without Kafka** — they use the in-memory driver and mocks:
+Vitest, configured in `vitest.config.ts`. All 59 tests run **without Kafka** — they use the in-memory driver and mocks:
 
 | Suite | File | Tests |
 |---|---|---|
@@ -426,7 +426,7 @@ Vitest, configured in `vitest.config.ts`. All 58 tests run **without Kafka** —
 | Event schemas | `packages/domain/test/schemas.test.ts` | 6 |
 | Telemetry schema | `packages/domain/test/telemetry.test.ts` | 4 |
 | Confluent adapter (mocked driver) | `packages/broker/test/confluent.test.ts` | 13 |
-| Transactions | `packages/broker/test/confluent.test.ts` (transactions block) | 3 |
+| Transactions | `packages/broker/test/confluent.test.ts` (transactions block) | 4 |
 | In-memory broker | `packages/broker/test/in-memory.test.ts` | 7 |
 | Codec (JSON + wiring) | `packages/broker/test/codec.test.ts` | 8 |
 | Telemetry client | `packages/infra/test/telemetry.test.ts` | 3 |
