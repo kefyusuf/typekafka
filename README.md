@@ -18,6 +18,7 @@ This repo is a portfolio / reference project showing production-grade, event-dri
 - [Why an adapter pattern?](#why-an-adapter-pattern)
 - [Architecture](#architecture)
   - [Consumer pipeline](#consumer-pipeline)
+- [Switching drivers](#switching-drivers)
 - [Quickstart](#quickstart)
   - [Standard usage — Docker stack](#standard-usage--docker-stack)
     - [What's running](#whats-running)
@@ -51,6 +52,8 @@ Instead of hard-coding one client, the whole application talks to a single **por
 |---|---|---|
 | `in-memory` | Zero-dependency `EventEmitter` broker with the same semantics (topics, partitions, offsets) | Local dev, CI, demos — runs with **no Kafka** |
 | `confluent` | Real Kafka via `@confluentinc/kafka-javascript` (KafkaJS facade) | Production / Docker |
+
+Which driver supports which capability is the difference that matters — see the [driver capability matrix](#switching-drivers) and the full [driver-switching guide](docs/guides/driver-switching.md).
 
 ```ts
 const broker = createBroker({
@@ -87,6 +90,8 @@ export interface IMessageBroker {
 ```
 
 The adapters translate between the native client shape and a broker-agnostic `KafkaMessage` envelope (`packages/broker/src/types.ts`), so business code never sees `librdkafka` buffers or KafkaJS internals.
+
+Producer/consumer serialization, retry topics, transactions and security capabilities differ per driver — see [Switching drivers](#switching-drivers).
 
 ---
 
@@ -210,6 +215,26 @@ npm run dev:producer -- --count 10 --delay 300
 ```
 
 In-memory mode uses the same port contract as real Kafka, so the semantics (topics, partition key routing, offsets) are exercised identically — but there is **no web UI** in this mode.
+
+---
+
+## Switching drivers
+
+`BROKER_DRIVER=in-memory|confluent` selects the adapter behind the port — apps and domain code never change.
+
+| Capability | `in-memory` | `confluent` |
+|---|---|---|
+| Core pipeline (produce/consume/offsets/DLQ) | ✅ | ✅ |
+| In-process retry (backoff + jitter) | ✅ | ✅ |
+| Retry topic + scheduled retry | ❌ (in-process only) | ✅ |
+| Transactions / exactly-once outbox | ❌ | ✅ |
+| Schema Registry + Avro | ❌ | ✅ |
+| Compacted topics / customer-360 | ✅ (simulated) | ✅ |
+| Observability (OTel + metrics) | ✅ | ✅ |
+| MirrorMaker 2 / multi-cluster | ❌ | ✅ |
+| SASL/TLS/ACL | ❌ | ✅ |
+
+Step-by-step: [docs/guides/driver-switching.md](docs/guides/driver-switching.md)
 
 ---
 
