@@ -19,9 +19,11 @@ This repo is a portfolio / reference project showing production-grade, event-dri
 - [Architecture](#architecture)
   - [Consumer pipeline](#consumer-pipeline)
 - [Quickstart](#quickstart)
-  - [Option A — in-memory driver (no Docker)](#option-a--in-memory-driver-no-docker)
-  - [Option B — full Docker stack](#option-b--full-docker-stack)
-  - [Option C — Web UI (recommended for learning)](#option-c--web-ui-recommended-for-learning)
+  - [Standard usage — Docker stack](#standard-usage--docker-stack)
+    - [What's running](#whats-running)
+    - [How the stack works](#how-the-stack-works)
+    - [What to check](#what-to-check)
+  - [Alternative — in-memory driver (no Docker)](#alternative--in-memory-driver-no-docker)
 - [Configuration](#configuration)
 - [Message contract](#message-contract)
   - [Topic-safe generic types](#topic-safe-generic-types)
@@ -150,9 +152,50 @@ With `BROKER_DRIVER=in-memory`, the consumer self-generates a 5-event sample wor
 
 ## Quickstart
 
-Requirements: **Node.js 22+** (Option A), **Docker** (Option B).
+Requirements: **Docker** (standard usage) or **Node.js 22+** (no-Docker path).
 
-### Option A — in-memory driver (no Docker)
+### Standard usage — Docker stack
+
+```bash
+docker compose up --build
+```
+
+This is the recommended way to run the project: it starts Kafka, all app services and both UIs, and shows real message flow end to end.
+
+#### What's running
+
+| Service | Container | What it does | Where to look |
+|---|---|---|---|
+| **Kafka** | `nodejs-kafka-kafka` | KRaft-mode broker (no ZooKeeper), listens on `9092` | — |
+| **Kafka UI** | `nodejs-kafka-ui` | Browse topics, partitions, messages and consumer-group offsets | [http://localhost:8080](http://localhost:8080) |
+| **producer** | `nodejs-kafka-producer` | Publishes a batch of order + payment events, then exits | `docker compose logs producer` |
+| **consumer** | `nodejs-kafka-consumer` | Long-running worker: `parse → retry → DLQ → commit` on `orders.created` + `payments.completed` | `docker compose logs -f consumer` |
+| **web** | `nodejs-kafka-web` | REST + SSE server and the React flow-tracker UI | [http://localhost:3000](http://localhost:3000) |
+
+#### How the stack works
+
+1. **Startup order** — `kafka` starts first and is health-checked (it must answer `kafka-topics.sh --list`). `kafka-ui`, `producer`, `consumer` and `web` wait for it via `depends_on: condition: service_healthy`, so nothing connects before the broker is ready.
+2. **Topics** — the apps create their topics at startup through the broker's admin client: `orders.created`, `payments.completed`, `orders.dlq`, `telemetry.events`. `KAFKA_AUTO_CREATE_TOPICS_ENABLE=false` keeps the cluster explicit.
+3. **Produce** — the `producer` service publishes deterministic order + payment events and exits. Every third order is deliberately **oversized** (> 100 000 cents) to fire the simulated provider timeout.
+4. **Consume** — the `consumer` reads them in the `notification-service` group and runs each message through `parse → retry → DLQ → commit`, emitting a telemetry event per step to `telemetry.events`.
+5. **Visualise** — the `web` service consumes `telemetry.events` in the `web-telemetry` group and broadcasts each event to browsers over Server-Sent Events, so the flow diagram and the event log update live.
+
+> State is container-local: the broker keeps its KRaft logs inside the container (no volumes). `docker compose down` therefore **resets all Kafka state**, and the next `docker compose up --build` replays the demo from the beginning.
+
+#### What to check
+
+1. **Containers are up** — `docker compose ps` shows the five services running (`Up` / `healthy`). The first build takes a while (the apps compile TypeScript inside the image); `docker compose logs -f web` prints `web UI listening` when it is ready.
+2. **Kafka is healthy** — open [http://localhost:8080](http://localhost:8080) (Kafka UI):
+   - *Topics* → `orders.created`, `payments.completed`, `orders.dlq`, `telemetry.events`. Open one → *Browse messages* → the JSON payloads.
+   - *Consumer groups* → `notification-service` advances its offset as messages are consumed; `web-telemetry` advances with each telemetry event.
+3. **The pipeline ran** — `docker compose logs consumer` shows `consumers running`, and per message: `handler failed, will retry` → `handler exhausted retries, sending to DLQ` for the oversized order, then the offset commit. `docker compose logs producer` shows `event produced` lines with `topic`, `eventId`, `partition`, `offset`.
+4. **Watch it live** — open [http://localhost:3000](http://localhost:3000) and place an order from the form. The flow diagram lights up `producer → orders.created → consumer → committed`, and the live event log streams each step (`consumed`, `parsed`, `committed`, `payment-recorded`) with topic, partition, offset and a concept tag.
+5. **Trigger retry → DLQ** — place an order with **total above 100000 cents**; the log shows `retrying` → `dead-lettered`, and the message lands in `orders.dlq` (visible in Kafka UI).
+6. **Clean up / reset** — `docker compose down` stops everything and wipes Kafka state; `docker compose up --build` starts a fresh run.
+
+### Alternative — in-memory driver (no Docker)
+
+Same port contract, zero dependencies — good for a quick look or CI. The consumer self-generates a 5-event sample workload, so the whole pipeline runs in one process:
 
 ```bash
 npm install
@@ -160,53 +203,13 @@ npm run build
 npm run dev:consumer     # self-generates 5 orders → consumes → retries → DLQ
 ```
 
-You'll see the full pipeline in the JSON logs: orders processed, one oversized order retried (`handler failed, will retry`) and dead-lettered (`handler exhausted retries, sending to DLQ`), and payments recorded.
+You'll see the full pipeline in the JSON logs: orders processed, one oversized order retried (`handler failed, will retry`) and dead-lettered (`handler exhausted retries, sending to DLQ`), and payments recorded. You can also publish explicitly:
 
 ```bash
 npm run dev:producer -- --count 10 --delay 300
 ```
 
-In-memory mode uses the same port contract as real Kafka, so the semantics (topics, partition key routing, offsets) are exercised identically.
-
-### Option B — full Docker stack
-
-```bash
-docker compose up --build
-```
-
-This starts:
-
-- **Kafka** (`apache/kafka:3.7.0`, KRaft mode, no ZooKeeper) on `localhost:9092`
-- **Kafka UI** on [http://localhost:8080](http://localhost:8080)
-- **consumer** app (confluent driver, reads the `notification-service` group)
-- **producer** app (publishes order + payment events and exits)
-
-> The apps talk through the real Kafka cluster (`BROKER_DRIVER=confluent`). The broker keeps its KRaft logs inside the container, so `docker compose down` resets Kafka state and the next `up` replays from the beginning. Use `docker compose up --build` again to re-run the demo.
-
-Watch the consumer process orders and payments while the Kafka UI shows the topics, partitions, messages, and consumer group offsets live.
-
-### Option C — Web UI (recommended for learning)
-
-```bash
-docker compose up --build
-```
-
-Open [http://localhost:3000](http://localhost:3000):
-
-- **Place an order** from the form (SKU / quantity / unit price). The web
-  service publishes `orders.created` + `payments.completed` and emits
-  telemetry events for what it did.
-- **Watch the flow diagram** light up as the message moves
-  `producer → orders.created → consumer → (retry) → DLQ`.
-- **Read the live event log** — every pipeline step (`consumed`, `parsed`,
-  `retrying`, `dead-lettered`, `committed`, `payment-recorded`) with the
-  topic, partition, offset, and an educational concept tag.
-- Try a **total above 100000 cents** to trigger the simulated provider
-  timeout → retry → DLQ flow.
-
-The web UI requires real Kafka (`BROKER_DRIVER=confluent`, set by compose).
-For a no-Docker learning path, `npm run dev:consumer` still self-demos the
-in-memory broker.
+In-memory mode uses the same port contract as real Kafka, so the semantics (topics, partition key routing, offsets) are exercised identically — but there is **no web UI** in this mode.
 
 ---
 
