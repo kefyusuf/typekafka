@@ -24,11 +24,11 @@ An offset is the position of a message within a partition. Kafka's convention is
 Offsets can be committed two ways:
 
 - **Auto-commit** — the client commits periodically, behind your back. Simple, but a crash can commit work that did not complete.
-- **Manual commit** — your code calls `context.commit()` when the message is truly done. This is what this repo uses (`manualCommit: true`), so a handler crash does not advance the offset.
+- **Manual commit** — your code calls `context.commit()` when the message is truly done. The `notification-service` consumer runs with `manualCommit: true`, so a handler crash does not advance the offset. (The `web-telemetry` group instead passes `manualCommit: false`, so its telemetry offsets auto-commit.)
 
 ## At-least-once in this repo
 
-The consumer runs each message through the pipeline in `apps/consumer/src/handler-runner.ts`: `parse -> retry -> DLQ -> commit`.
+The `notification-service` consumer runs each message through the pipeline in `apps/consumer/src/handler-runner.ts`: `parse -> retry -> DLQ -> commit`.
 
 The offset is committed **only after the handler succeeds**. If the message fails to parse, or the handler exhausts its retries, the message is written to `orders.dlq` (`DlqManager.deadLetter`, `packages/infra/src/dlq.ts`) and only then committed. The DLQ keeps the original payload plus diagnostics (error, attempts, and headers such as `dlq.original-topic`), so no message is silently dropped — it is either processed, or dead-lettered for inspection and replay.
 
@@ -40,7 +40,7 @@ One consumer processes the messages of a given partition **serially** — that i
 
 `ConsumeOptions` (`packages/broker/src/types.ts`) exposes two knobs:
 
-- `concurrency` — the maximum number of handler invocations running in parallel. The default is `1`, which processes each partition's messages strictly one at a time; higher values trade per-partition ordering for throughput.
-- `manualCommit` — when `true`, offsets are committed only after the handler resolves; when `false`, the adapter commits on resolve.
+- `concurrency` — declared in `ConsumeOptions` as the number of concurrent handler invocations, defaulting to `1`. Today neither adapter reads this field: the confluent adapter never forwards it to `consumer.run`, so serial processing comes from the kafka.js `eachMessage` default (`concurrency: 1`), and the in-memory driver dispatches every message fire-and-forget with no serialization at all.
+- `manualCommit` — when `true`, offsets are committed only after the handler resolves; when `false`, the adapter commits on resolve (the kafka.js `autoCommit` flag, `packages/broker/src/adapters/confluent.ts`).
 
-In practice, this repo runs with `manualCommit: true` and the default `concurrency: 1`: each message is fully processed and committed before the next one from that partition is delivered — predictable, and safe by default.
+In practice: the `notification-service` consumer runs with `manualCommit: true`, committing each offset only after the `parse -> retry -> DLQ -> commit` pipeline finishes, while the `web-telemetry` group auto-commits. Per-partition serial processing on real Kafka comes from the kafka.js `eachMessage` default, not from `ConsumeOptions.concurrency`.

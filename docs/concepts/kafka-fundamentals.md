@@ -39,7 +39,7 @@ The in-memory broker emulates exactly this: offsets are assigned per `(topic, pa
 
 **At-least-once** commits the offset only after the message was processed successfully. A crash between processing and commit causes the message to be delivered again, so handlers must tolerate duplicates. This is what this repo uses: the consumer pipeline only commits after the handler (or DLQ write) succeeded, so no message is lost.
 
-**Exactly-once** makes each message processed exactly once — in practice at-least-once delivery combined with an idempotency mechanism that renders duplicates harmless, or a transaction that pairs the processing side effect with the offset commit. Kafka's transactional producer can do this broker-side; the transactional outbox pattern is the common application-level alternative and lands in `docs/guides/outbox.md` (Phase 3).
+**Exactly-once** makes each message processed exactly once — in practice at-least-once delivery combined with an idempotency mechanism that renders duplicates harmless, or a transaction that pairs the processing side effect with the offset commit. Kafka's transactional producer can do this broker-side; the transactional outbox pattern is the common application-level alternative and lands in `docs/guides/outbox.md` (Phase 2).
 
 ## Consumers and consumer groups
 
