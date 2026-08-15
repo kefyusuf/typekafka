@@ -26,6 +26,8 @@ This repo is a portfolio / reference project showing production-grade, event-dri
 - [Message contract](#message-contract)
   - [Topic-safe generic types](#topic-safe-generic-types)
   - [Events](#events)
+  - [Telemetry events (flow tracker)](#telemetry-events-flow-tracker)
+  - [Web API](#web-api)
 - [What this repo demonstrates](#what-this-repo-demonstrates)
 - [Repository layout](#repository-layout)
 - [Commands](#commands)
@@ -175,7 +177,7 @@ docker compose up --build
 This starts:
 
 - **Kafka** (`apache/kafka:3.7.0`, KRaft mode, no ZooKeeper) on `localhost:9092`
-- **Kafka UI** on [http://localhost:18080](http://localhost:18080)
+- **Kafka UI** on [http://localhost:8080](http://localhost:8080)
 - **consumer** app (confluent driver, reads the `notification-service` group)
 - **producer** app (publishes order + payment events and exits)
 
@@ -275,8 +277,53 @@ await publisher.publish('orders.created', payment);     // ❌ compile error
 | `payments.completed` | `PaymentCompleted` | Payment captured for an order |
 | `orders.dlq` | `DlqEntry` | Failed messages (parse failure or handler exhaustion) |
 | `orders.retry` | — | Reserved for retry topics (see roadmap) |
+| `telemetry.events` | `TelemetryEvent` | Per-step pipeline telemetry for the live flow tracker |
 
 The sample generators (`packages/domain/src/sample/sample-events.ts`) create deterministic, spec-compliant events. Every third order is deliberately **oversized** (> 100 000 cents) so the notification handler's simulated provider timeout fires — demonstrating the retry + DLQ pipeline. Payment events mirror each order (`orderId`, `amountCents`, `method`).
+
+### Telemetry events (flow tracker)
+
+Every pipeline step emits a `TelemetryEvent` to `telemetry.events` so the web UI can replay the flow live. The consumer publishes one per step it executes (`packages/consumer` → `TelemetryClient`); the web service adds a `produced` event when an order is placed.
+
+```ts
+// packages/domain/src/events/telemetry.ts
+export const TELEMETRY_TOPIC = 'telemetry.events';
+
+type TelemetryEventType =
+  | 'produced'        // web service placed an order
+  | 'consumed'        // consumer picked up the message
+  | 'parsed'          // payload passed Zod validation
+  | 'retrying'        // handler failed, backing off
+  | 'dead-lettered'   // exhausted retries → DLQ
+  | 'committed'       // offset committed after success
+  | 'payment-recorded'// payments.completed processed
+  | 'invalid-to-dlq'; // parse failure → DLQ
+
+interface TelemetryEvent {
+  type: TelemetryEventType;
+  topic: string;        // origin topic (e.g. 'orders.created')
+  eventId: string;      // id of the source event
+  orderId: string;      // grouped per order for the flow diagram
+  partition: number;
+  offset: string;
+  attempt?: number;     // set for retrying / dead-lettered
+  message: string;      // human-readable summary shown in the event log
+  concept: string;      // educational tag (e.g. 'retry', 'dlq', 'at-least-once')
+  occurredAt: string;   // ISO-8601 timestamp
+}
+```
+
+The web server consumes the topic in the `web-telemetry` group (`TELEMETRY_GROUP_ID`) and broadcasts every validated event to connected browsers over SSE.
+
+### Web API
+
+| Route | Method | Description |
+|---|---|---|
+| `/api/health` | `GET` | Liveness probe |
+| `/api/orders` | `POST` | Places an order — publishes `orders.created` + `payments.completed`, emits a `produced` telemetry event. Request body is validated server-side (Zod) and returns `400` with a field error list when invalid |
+| `/api/events` | `GET` | Server-Sent Events stream of `TelemetryEvent`s (`text/event-stream`), used by the flow diagram and event log |
+
+The React UI is served statically on the same origin (see `apps/web/src/ui`).
 
 ---
 
@@ -298,7 +345,7 @@ The sample generators (`packages/domain/src/sample/sample-events.ts`) create det
 | **Consumer groups / offsets** | `ConsumeOptions` (manual commit, group id, concurrency) |
 | **Multi-stage Docker builds** | `apps/*/Dockerfile` |
 | **KRaft Kafka (no ZooKeeper)** | `docker-compose.yml` |
-| **Unit + integration tests** | Vitest, 42 tests, no Kafka required |
+| **Unit + integration tests** | Vitest, 44 tests, no Kafka required |
 
 ---
 
@@ -327,29 +374,29 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 | `npm run build` | Compile all packages (topological order) |
 | `npm run typecheck` | `tsc --noEmit` across all packages |
 | `npm run lint` | ESLint (flat config + typescript-eslint) |
-| `npm test` | Vitest — 42 tests, runs without any Kafka |
+| `npm test` | Vitest — 44 tests, runs without any Kafka |
 | `npm run dev:producer -- --count N` | Produce N order+payment pairs (`--delay` also accepted, ms) |
 | `npm run dev:consumer` | Consumer worker (in-memory self-demo) |
 | `npm run dev:web` | Web UI — Express API on :3000, Vite dev UI on :5173 (needs real Kafka) |
-| `docker compose up --build` | Full stack with Kafka UI on :18080 and web UI on :3000 |
+| `docker compose up --build` | Full stack with Kafka UI on :8080 and web UI on :3000 |
 
 ---
 
 ## Tests
 
-Vitest, configured in `vitest.config.ts`. All 42 tests run **without Kafka** — they use the in-memory driver and mocks:
+Vitest, configured in `vitest.config.ts`. All 44 tests run **without Kafka** — they use the in-memory driver and mocks:
 
 | Suite | File | Tests |
 |---|---|---|
 | Retry behaviour | `packages/infra/test/retry.test.ts` | 4 |
 | Event schemas | `packages/domain/test/schemas.test.ts` | 6 |
 | Telemetry schema | `packages/domain/test/telemetry.test.ts` | 4 |
-| Confluent adapter (mocked driver) | `packages/broker/test/confluent.test.ts` | 12 |
+| Confluent adapter (mocked driver) | `packages/broker/test/confluent.test.ts` | 13 |
 | In-memory broker | `packages/broker/test/in-memory.test.ts` | 6 |
 | Telemetry client | `packages/infra/test/telemetry.test.ts` | 3 |
 | Dead-letter queue | `packages/infra/test/dlq.test.ts` | 1 |
 | Consumer pipeline | `apps/consumer/test/pipeline.test.ts` | 3 |
-| Web server | `apps/web/test/server.test.ts` | 3 |
+| Web server | `apps/web/test/server.test.ts` | 4 |
 
 CI (`.github/workflows/ci.yml`) runs `npm ci` → `build` → `typecheck` → `lint` → `test` on Node 22.
 
