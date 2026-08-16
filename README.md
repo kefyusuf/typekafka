@@ -14,6 +14,7 @@ This repo is a portfolio / reference project showing production-grade, event-dri
 - **Compacted topics / customer-360** — the producer aggregates per-customer state into a KTable-style changelog on a compacted `customers` topic; the `customer-view` service replays it into an in-memory read model, deletes via tombstones (null-value records), and serves a small REST API.
 - A **live flow tracker** — a web UI that places orders, watches the message move through the pipeline in real time, and streams per-step telemetry over SSE.
 - **Observability** — OpenTelemetry **manual spans** around `produce` / `consume` in both broker adapters (no auto-instrumentation), a **Prometheus `/metrics`** endpoint per app, and an optional `observability` compose profile (`otel-collector` → debug exporter, Prometheus scraping all apps, Grafana dashboard at `:3002`).
+- **Multi-cluster / MirrorMaker 2** — an optional `mirror` compose profile with a second single-node KRaft cluster (`kafka-b`) and a **MirrorMaker 2** worker replicating `orders.*` (`orders.created`, `orders.payment.*`, `orders.dlq`) from the primary cluster, visible as a second `mirror` cluster in Kafka UI.
 
 ---
 
@@ -209,6 +210,8 @@ This is the recommended way to run the project: it starts Kafka, all app service
 | **otel-collector** | `nodejs-kafka-otel-collector` | Receives OTLP traces over HTTP on `4318` and prints them via its debug exporter (*observability profile*) | `docker compose logs otel-collector` |
 | **prometheus** | `nodejs-kafka-prometheus` | Scrapes the four apps' `/metrics` endpoints plus the collector's own metrics (*observability profile*) | [http://localhost:9090](http://localhost:9090) |
 | **grafana** | `nodejs-kafka-grafana` | Visualizes the metrics with a provisioned Prometheus datasource + "Node.js Kafka" dashboard (*observability profile*) | [http://localhost:3002](http://localhost:3002) |
+| **kafka-b** | `nodejs-kafka-kafka-b` | Second single-node KRaft cluster (`apache/kafka:3.7.0`) — the mirror target, listens on `9094` (*mirror profile*) | — |
+| **mirror-maker** | `nodejs-kafka-mirror-maker` | MirrorMaker 2 worker replicating `orders.*` from `kafka` to `kafka-b` (*mirror profile*) | `docker compose logs mirror-maker` |
 
 #### How the stack works
 
@@ -219,6 +222,7 @@ This is the recommended way to run the project: it starts Kafka, all app service
 5. **Visualise** — the `web` service consumes `telemetry.events` in the `web-telemetry` group and broadcasts each event to browsers over Server-Sent Events, so the flow diagram and the event log update live.
 6. **Query the read model** — the `customer-view` service consumes `customers` in the `customer-view` group and serves the current per-customer totals over REST (`GET /customers/:id`); `DELETE /customers/:id` publishes a tombstone, so the read model evicts the customer.
 7. **Observe (optional)** — run the observability stack with `docker compose --profile observability up` alongside the base stack: the apps export OTel spans to `otel-collector` (visible in its logs via the debug exporter) and expose Prometheus metrics at `/metrics`, Prometheus scrapes all four apps (see its targets on `:9090`), and Grafana visualizes them with a provisioned datasource + dashboard on `:3002`. The default `docker compose up` (no profile) is unchanged and starts no observability infrastructure; an app only activates tracing/metrics when `OTEL_EXPORTER_OTLP_ENDPOINT` / `METRICS_PORT` are set.
+8. **Mirror (optional)** — run the mirror stack with `docker compose --profile mirror up` alongside the base stack: a second single-node KRaft cluster (`kafka-b`, host port `9094`) starts and a MirrorMaker 2 worker replicates `orders.*` (`orders.created`, `orders.payment.*`, `orders.dlq`) from the primary `kafka` cluster to it. Kafka UI on `:8080` then lists both clusters — `local` and `mirror`. The default `docker compose up` (no profile) is unchanged and starts no mirror infrastructure; the compacted `customers` topic is intentionally not mirrored.
 
 > State is container-local: the broker keeps its KRaft logs inside the container (no volumes). `docker compose down` therefore **resets all Kafka state**, and the next `docker compose up --build` replays the demo from the beginning.
 
@@ -275,6 +279,7 @@ Step-by-step: [docs/guides/driver-switching.md](docs/guides/driver-switching.md)
 Schema evolution with Schema Registry + Avro: [docs/guides/schema-registry.md](docs/guides/schema-registry.md)
 Compacted topics (customer-360) with tombstones: [docs/guides/compacted-topics.md](docs/guides/compacted-topics.md)
 Observability (OTel spans + Prometheus metrics): [docs/guides/observability.md](docs/guides/observability.md)
+Multi-cluster mirroring (MirrorMaker 2): [docs/guides/multi-cluster-mirroring.md](docs/guides/multi-cluster-mirroring.md)
 
 ---
 
@@ -304,6 +309,8 @@ All environment variables are validated **at startup** by a Zod schema (`package
 | `METRICS_PORT` | (empty) | Port for the app's Prometheus `/metrics` HTTP server; empty → metrics server disabled |
 
 > Metric endpoints in the compose stack: producer → `producer:9464/metrics`, consumer → `consumer:9465/metrics` (both via `METRICS_PORT`), web → `web:3000/metrics`, customer-view → `customer-view:3001/metrics` (both served on their own Express port).
+
+> The MirrorMaker 2 flow is configured in `compose/mirror/mm2.properties` (cluster aliases, `source->target.topics = orders.*`, internal-topic replication factors) — no new user env vars; the profile is enabled with `--profile mirror`.
 
 See [`.env.example`](.env.example) for a documented copy-paste template.
 
@@ -511,3 +518,4 @@ CI (`.github/workflows/ci.yml`) runs `npm ci` → `build` → `typecheck` → `l
 - [x] Transactional outbox (SQLite order + outbox rows in one write, transactional relay, `read_committed` consumers)
 - [x] Schema Registry + Avro serialization for schema evolution
 - [x] Observability — OpenTelemetry manual spans (`produce` / `consume`) + Prometheus `/metrics` per app + optional `observability` compose profile (collector / Prometheus / Grafana)
+- [x] Multi-cluster mirroring — MirrorMaker 2 replicating `orders.*` to a second single-node KRaft cluster via the optional `mirror` compose profile
