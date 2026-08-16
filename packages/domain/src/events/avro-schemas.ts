@@ -62,8 +62,26 @@ const paymentCompletedAvroSchema = {
   ],
 } as const;
 
+const customerUpdatedAvroSchema = {
+  type: 'record',
+  name: 'CustomerUpdated',
+  namespace: 'com.nodejs.kafka.events',
+  doc: 'Mirrors CustomerUpdatedSchema (packages/domain/src/events/customer-updated.ts).',
+  fields: [
+    { name: 'type', type: 'string' },
+    { name: 'eventId', type: 'string' },
+    { name: 'occurredAt', type: 'string' },
+    { name: 'customerId', type: 'string' },
+    { name: 'totalSpentCents', type: 'long' },
+    { name: 'orderCount', type: 'int' },
+    { name: 'lastOrderAt', type: 'string' },
+    { name: 'updatedAt', type: 'string' },
+  ],
+} as const;
+
 /** Topic -> curated Avro schema (record JSON), mirroring `eventSchemas`. */
 export const topicToAvroSchema: Record<EventTopic, Record<string, unknown>> = {
   ['orders.created']: orderCreatedAvroSchema,
   ['payments.completed']: paymentCompletedAvroSchema,
+  ['customers']: customerUpdatedAvroSchema,
 };

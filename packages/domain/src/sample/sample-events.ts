@@ -31,7 +31,7 @@ export function createSampleOrder(seq: number): OrderCreated {
     eventId: randomUUID(),
     occurredAt: new Date().toISOString(),
     orderId: `ORD-${String(seq).padStart(5, '0')}`,
-    customerId: `CUST-${1000 + randomInt(9000)}`,
+    customerId: `CUST-100${(seq % 3) + 1}`,
     items,
     totalCents: items.reduce((sum, i) => sum + i.quantity * i.priceCents, 0),
   };
