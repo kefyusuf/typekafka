@@ -13,6 +13,7 @@ This repo is a portfolio / reference project showing production-grade, event-dri
 - Curated **Schema Registry + Avro** schemas (schema evolution with backward compatibility) behind the same codec seam.
 - **Compacted topics / customer-360** — the producer aggregates per-customer state into a KTable-style changelog on a compacted `customers` topic; the `customer-view` service replays it into an in-memory read model, deletes via tombstones (null-value records), and serves a small REST API.
 - A **live flow tracker** — a web UI that places orders, watches the message move through the pipeline in real time, and streams per-step telemetry over SSE.
+- **Observability** — OpenTelemetry **manual spans** around `produce` / `consume` in both broker adapters (no auto-instrumentation), a **Prometheus `/metrics`** endpoint per app, and an optional `observability` compose profile (`otel-collector` → debug exporter, Prometheus scraping all apps, Grafana dashboard at `:3002`).
 
 ---
 
@@ -205,6 +206,9 @@ This is the recommended way to run the project: it starts Kafka, all app service
 | **consumer** | `nodejs-kafka-consumer` | Long-running worker: `parse → retry → retry topic → DLQ → commit` on `orders.created` + `payments.completed` | `docker compose logs -f consumer` |
 | **web** | `nodejs-kafka-web` | REST + SSE server, React flow-tracker UI, and the SQLite transactional outbox | [http://localhost:3000](http://localhost:3000) |
 | **customer-view** | `nodejs-kafka-customer-view` | KTable-style read model over the compacted `customers` topic (`GET/DELETE /customers`) | [http://localhost:3001](http://localhost:3001) |
+| **otel-collector** | `nodejs-kafka-otel-collector` | Receives OTLP traces over HTTP on `4318` and prints them via its debug exporter (*observability profile*) | `docker compose logs otel-collector` |
+| **prometheus** | `nodejs-kafka-prometheus` | Scrapes the four apps' `/metrics` endpoints plus the collector's own metrics (*observability profile*) | [http://localhost:9090](http://localhost:9090) |
+| **grafana** | `nodejs-kafka-grafana` | Visualizes the metrics with a provisioned Prometheus datasource + "Node.js Kafka" dashboard (*observability profile*) | [http://localhost:3002](http://localhost:3002) |
 
 #### How the stack works
 
@@ -214,6 +218,7 @@ This is the recommended way to run the project: it starts Kafka, all app service
 4. **Consume** — the `consumer` reads them in the `notification-service` group and runs each message through `parse → retry → DLQ → commit`, emitting a telemetry event per step to `telemetry.events`.
 5. **Visualise** — the `web` service consumes `telemetry.events` in the `web-telemetry` group and broadcasts each event to browsers over Server-Sent Events, so the flow diagram and the event log update live.
 6. **Query the read model** — the `customer-view` service consumes `customers` in the `customer-view` group and serves the current per-customer totals over REST (`GET /customers/:id`); `DELETE /customers/:id` publishes a tombstone, so the read model evicts the customer.
+7. **Observe (optional)** — run the observability stack with `docker compose --profile observability up` alongside the base stack: the apps export OTel spans to `otel-collector` (visible in its logs via the debug exporter) and expose Prometheus metrics at `/metrics`, Prometheus scrapes all four apps (see its targets on `:9090`), and Grafana visualizes them with a provisioned datasource + dashboard on `:3002`. The default `docker compose up` (no profile) is unchanged and starts no observability infrastructure; an app only activates tracing/metrics when `OTEL_EXPORTER_OTLP_ENDPOINT` / `METRICS_PORT` are set.
 
 > State is container-local: the broker keeps its KRaft logs inside the container (no volumes). `docker compose down` therefore **resets all Kafka state**, and the next `docker compose up --build` replays the demo from the beginning.
 
@@ -269,6 +274,7 @@ In-memory mode uses the same port contract as real Kafka, so the semantics (topi
 Step-by-step: [docs/guides/driver-switching.md](docs/guides/driver-switching.md)
 Schema evolution with Schema Registry + Avro: [docs/guides/schema-registry.md](docs/guides/schema-registry.md)
 Compacted topics (customer-360) with tombstones: [docs/guides/compacted-topics.md](docs/guides/compacted-topics.md)
+Observability (OTel spans + Prometheus metrics): [docs/guides/observability.md](docs/guides/observability.md)
 
 ---
 
@@ -293,6 +299,11 @@ All environment variables are validated **at startup** by a Zod schema (`package
 | `TELEMETRY_GROUP_ID` | `web-telemetry` | Consumer group id for the telemetry event stream |
 | `OUTBOX_DB_PATH` | `data/outbox.db` | Web app: SQLite file for the `orders` + `outbox` tables (parent dir is created on start; compose mounts a named volume at `/data`) |
 | `CUSTOMER_VIEW_PORT` | `3001` | `customer-view` service: HTTP port for the customer read model |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | (empty) | OTel OTLP/HTTP traces endpoint (e.g. `http://otel-collector:4318/v1/traces`); empty → tracing disabled |
+| `OTEL_SERVICE_NAME` | (empty) | OTel resource `service.name` (falls back to `nodejs-kafka` when empty) |
+| `METRICS_PORT` | (empty) | Port for the app's Prometheus `/metrics` HTTP server; empty → metrics server disabled |
+
+> Metric endpoints in the compose stack: producer → `producer:9464/metrics`, consumer → `consumer:9465/metrics` (both via `METRICS_PORT`), web → `web:3000/metrics`, customer-view → `customer-view:3001/metrics` (both served on their own Express port).
 
 See [`.env.example`](.env.example) for a documented copy-paste template.
 
@@ -417,7 +428,7 @@ The React UI is served statically on the same origin (see `apps/web/src/ui`).
 | **Consumer groups / offsets** | `ConsumeOptions` (manual commit, group id, concurrency) |
 | **Multi-stage Docker builds** | `apps/*/Dockerfile` |
 | **KRaft Kafka (no ZooKeeper)** | `docker-compose.yml` |
-| **Unit + integration tests** | Vitest, 111 tests, no Kafka required |
+| **Unit + integration tests** | Vitest, 132 tests, no Kafka required |
 
 ---
 
@@ -447,7 +458,7 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 | `npm run build` | Compile all packages (topological order) |
 | `npm run typecheck` | `tsc --noEmit` across all packages |
 | `npm run lint` | ESLint (flat config + typescript-eslint) |
-| `npm test` | Vitest — 111 tests, runs without any Kafka |
+| `npm test` | Vitest — 132 tests, runs without any Kafka |
 | `npm run dev:producer -- --count N` | Produce N order+payment pairs (`--delay` also accepted, ms) |
 | `npm run dev:consumer` | Consumer worker (in-memory self-demo) |
 | `npm run dev:web` | Web UI — Express API on :3000, Vite dev UI on :5173 (needs real Kafka) |
@@ -458,7 +469,7 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 
 ## Tests
 
-Vitest, configured in `vitest.config.ts`. All 111 tests run **without Kafka** — they use the in-memory driver, `node:sqlite` `:memory:` databases, and mocks:
+Vitest, configured in `vitest.config.ts`. All 132 tests run **without Kafka** — they use the in-memory driver, `node:sqlite` `:memory:` databases, and mocks:
 
 | Suite | File | Tests |
 |---|---|---|
@@ -469,19 +480,22 @@ Vitest, configured in `vitest.config.ts`. All 111 tests run **without Kafka** �
 | Customer changelog (aggregation) | `packages/domain/test/customer.test.ts` | 6 |
 | Avro schemas (curated) | `packages/domain/test/avro-schemas.test.ts` | 3 |
 | Avro codec (Schema Registry) | `packages/broker/test/avro.test.ts` | 7 |
-| Broker config wiring | `packages/infra/test/broker.test.ts` | 4 |
+| Broker config wiring | `packages/infra/test/broker.test.ts` | 8 |
 | Telemetry schema | `packages/domain/test/telemetry.test.ts` | 4 |
 | Confluent adapter (mocked driver) | `packages/broker/test/confluent.test.ts` | 15 |
 | Transactions | `packages/broker/test/confluent.test.ts` (transactions block) | 4 |
 | In-memory broker | `packages/broker/test/in-memory.test.ts` | 8 |
+| Broker tracing (spans) | `packages/broker/test/tracing.test.ts` | 3 |
 | Codec (JSON + wiring) | `packages/broker/test/codec.test.ts` | 9 |
 | Telemetry client | `packages/infra/test/telemetry.test.ts` | 3 |
+| Metrics registry + server | `packages/infra/test/metrics.test.ts` | 6 |
+| Tracing bootstrap | `packages/infra/test/tracing.test.ts` | 1 |
 | Publisher | `packages/infra/test/publisher.test.ts` | 2 |
 | Dead-letter queue | `packages/infra/test/dlq.test.ts` | 1 |
-| Consumer pipeline | `apps/consumer/test/pipeline.test.ts` | 3 |
-| Retry topic pipeline | `apps/consumer/test/retry-topic.test.ts` | 5 |
-| Web server | `apps/web/test/server.test.ts` | 4 |
-| Customer view (read model + HTTP) | `apps/customer-view/test/customer-view.test.ts` | 7 |
+| Consumer pipeline | `apps/consumer/test/pipeline.test.ts` | 4 |
+| Retry topic pipeline | `apps/consumer/test/retry-topic.test.ts` | 6 |
+| Web server | `apps/web/test/server.test.ts` | 7 |
+| Customer view (read model + HTTP) | `apps/customer-view/test/customer-view.test.ts` | 9 |
 
 CI (`.github/workflows/ci.yml`) runs `npm ci` → `build` → `typecheck` → `lint` → `test` on Node 22.
 
@@ -496,3 +510,4 @@ CI (`.github/workflows/ci.yml`) runs `npm ci` → `build` → `typecheck` → `l
 - [x] Kafka Streams–style aggregation / compacted topics (customer 360 view)
 - [x] Transactional outbox (SQLite order + outbox rows in one write, transactional relay, `read_committed` consumers)
 - [x] Schema Registry + Avro serialization for schema evolution
+- [x] Observability — OpenTelemetry manual spans (`produce` / `consume`) + Prometheus `/metrics` per app + optional `observability` compose profile (collector / Prometheus / Grafana)
