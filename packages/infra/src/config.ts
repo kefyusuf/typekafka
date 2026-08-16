@@ -24,6 +24,14 @@ export const BrokerEnvSchema = z.object({
     .default('info'),
   WEB_PORT: z.coerce.number().int().positive().default(3000),
   TELEMETRY_GROUP_ID: z.string().trim().min(1).default('web-telemetry'),
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.string().default(''),
+  OTEL_SERVICE_NAME: z.string().default(''),
+  METRICS_PORT: z
+    .string()
+    .refine((v) => v === '' || /^[1-9]\d*$/.test(v), {
+      message: 'METRICS_PORT must be empty or a positive integer',
+    })
+    .default(''),
 });
 
 export type BrokerEnv = z.infer<typeof BrokerEnvSchema>;
@@ -41,6 +49,9 @@ export interface AppConfig {
   logLevel: BrokerEnv['LOG_LEVEL'];
   webPort: number;
   telemetryGroupId: string;
+  otelEndpoint: string;
+  otelServiceName: string;
+  metricsPort: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -69,5 +80,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     logLevel: e.LOG_LEVEL,
     webPort: e.WEB_PORT,
     telemetryGroupId: e.TELEMETRY_GROUP_ID,
+    otelEndpoint: e.OTEL_EXPORTER_OTLP_ENDPOINT,
+    otelServiceName: e.OTEL_SERVICE_NAME,
+    metricsPort: e.METRICS_PORT,
   };
 }
