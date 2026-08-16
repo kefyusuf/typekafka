@@ -71,6 +71,7 @@ services:
   # the notification-service consumer group (parse -> retry -> DLQ -> commit).
   # The broker keeps its KRaft logs inside the container, so `docker compose
   # down` resets Kafka state and the next `up` replays from the beginning.
+  # customer-view exposes the compacted `customers` topic as an HTTP read model.
 
   producer:
     build:
@@ -122,6 +123,24 @@ services:
       OUTBOX_DB_PATH: /data/outbox.db
     volumes:
       - web-outbox:/data
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  customer-view:
+    build:
+      context: .
+      dockerfile: apps/customer-view/Dockerfile
+    container_name: nodejs-kafka-customer-view
+    ports:
+      - "3001:3001"
+    environment:
+      BROKER_DRIVER: confluent
+      BROKER_BROKERS: kafka:9092
+      BROKER_CLIENT_ID: nodejs-kafka-customer-view
+      LOG_LEVEL: info
+      CUSTOMER_VIEW_PORT: "3001"
+      SCHEMA_REGISTRY_URL: ${SCHEMA_REGISTRY_URL:-}
     depends_on:
       kafka:
         condition: service_healthy
