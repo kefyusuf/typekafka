@@ -13,10 +13,13 @@ import {
 import {
   buildBrokerConfig,
   createLogger,
+  createMetrics,
   createRetryTopicScheduler,
   createTelemetryClient,
+  initTracing,
   loadConfig,
   registerGracefulShutdown,
+  startMetricsServer,
   DlqManager,
   TypedPublisher,
   type AppLogger,
@@ -34,6 +37,18 @@ async function main(): Promise<void> {
     { driver: config.driver, groupId: config.consumerGroupId },
     'consumer starting',
   );
+
+  const tracing = initTracing({
+    endpoint: config.otelEndpoint,
+    serviceName: config.otelServiceName || 'consumer',
+    logger,
+  });
+  const metrics = createMetrics();
+  let metricsServer: Awaited<ReturnType<typeof startMetricsServer>> | undefined;
+  if (config.metricsPort) {
+    metricsServer = await startMetricsServer(Number(config.metricsPort), metrics.registry);
+    logger.info({ port: metricsServer.port }, 'prometheus metrics server started');
+  }
 
   const broker = createBroker(
     buildBrokerConfig(config, {
@@ -79,6 +94,7 @@ async function main(): Promise<void> {
       attempts: config.driver === 'confluent' ? 2 : 3,
       baseDelayMs: 50,
       telemetry,
+      metrics,
       groupId: config.consumerGroupId,
       ...(retryScheduler ? { retryScheduler } : {}),
     },
@@ -143,6 +159,7 @@ async function main(): Promise<void> {
             attempts: 2,
             baseDelayMs: 50,
             telemetry,
+            metrics,
             groupId: config.consumerGroupId,
           },
           logger,
@@ -176,6 +193,16 @@ async function main(): Promise<void> {
         name: 'consumer-disposers',
         shutdown: async () => {
           for (const dispose of disposers) await dispose();
+        },
+      },
+      {
+        name: 'tracing',
+        shutdown: () => tracing.shutdown(),
+      },
+      {
+        name: 'metrics-server',
+        shutdown: async () => {
+          await metricsServer?.close();
         },
       },
     ],

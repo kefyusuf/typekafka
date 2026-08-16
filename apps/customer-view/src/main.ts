@@ -11,6 +11,8 @@ import {
 import {
   buildBrokerConfig,
   createLogger,
+  createMetrics,
+  initTracing,
   loadConfig,
   registerGracefulShutdown,
   type AppLogger,
@@ -21,6 +23,13 @@ import { CustomerStore } from './customer-store.js';
 async function main(): Promise<void> {
   const config = loadConfig();
   const logger = createLogger(config.logLevel);
+
+  const tracing = initTracing({
+    endpoint: config.otelEndpoint,
+    serviceName: config.otelServiceName || 'customer-view',
+    logger,
+  });
+  const metrics = createMetrics();
 
   const port = Number(process.env.CUSTOMER_VIEW_PORT ?? '3001');
 
@@ -42,7 +51,15 @@ async function main(): Promise<void> {
   await broker.consume<CustomerUpdated | null>(
     [CUSTOMER_TOPIC],
     async (message) => {
-      store.apply(message);
+      metrics.messagesConsumed.labels({ topic: message.topic }).inc();
+      const startedAt = performance.now();
+      try {
+        store.apply(message);
+      } finally {
+        metrics.handlerDurationMs
+          .labels({ topic: message.topic })
+          .observe(performance.now() - startedAt);
+      }
       logger.debug(
         { customerId: message.key, value: message.value },
         'customer view applied changelog record',
@@ -59,7 +76,7 @@ async function main(): Promise<void> {
     await produceDemoWorkload(broker, logger);
   }
 
-  const server = createCustomerViewServer({ broker, logger, store });
+  const server = createCustomerViewServer({ broker, logger, store, registry: metrics.registry });
   const { close } = await server.start(port);
   logger.info({ port }, 'customer view listening');
 
@@ -67,6 +84,7 @@ async function main(): Promise<void> {
     [
       { name: 'broker', shutdown: () => broker.disconnect() },
       { name: 'customer-view-server', shutdown: () => close() },
+      { name: 'tracing', shutdown: () => tracing.shutdown() },
     ],
     { logger },
   );

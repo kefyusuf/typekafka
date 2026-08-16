@@ -15,6 +15,7 @@ import type {
 import type { BrokerConfig } from '../config.js';
 import { JsonCodec, type MessageCodec } from '../codec/index.js';
 import { BrokerError, BrokerStateError } from '../errors.js';
+import { withSpan } from '../trace.js';
 
 interface StoredRecord {
   id: string;
@@ -110,28 +111,38 @@ export class InMemoryBrokerAdapter implements IMessageBroker {
       options.partition ??
       partitionForKey(options.key ?? null, topicMeta.partitions);
 
-    const lastOffset =
-      this.records
-        .filter((r) => r.topic === topic && r.partition === partition)
-        .reduce((max, r) => Math.max(max, r.offset), -1) + 1;
+    return withSpan(
+      'produce',
+      {
+        'messaging.system': 'kafka',
+        'messaging.destination': topic,
+        'messaging.destination_partition': partition,
+      },
+      async () => {
+        const lastOffset =
+          this.records
+            .filter((r) => r.topic === topic && r.partition === partition)
+            .reduce((max, r) => Math.max(max, r.offset), -1) + 1;
 
-    const record: StoredRecord = {
-      id: randomUUID(),
-      topic,
-      partition,
-      offset: lastOffset,
-      key: options.key ?? null,
-      value: await this.codec.serialize(topic, value),
-      headers: options.headers,
-      timestamp: new Date().toISOString(),
-      sequence: this.nextSequence++,
-    };
+        const record: StoredRecord = {
+          id: randomUUID(),
+          topic,
+          partition,
+          offset: lastOffset,
+          key: options.key ?? null,
+          value: await this.codec.serialize(topic, value),
+          headers: options.headers,
+          timestamp: new Date().toISOString(),
+          sequence: this.nextSequence++,
+        };
 
-    this.records.push(record);
-    this.emitter.emit('message', record);
-    this.emitter.emit(`message:${topic}`, record);
+        this.records.push(record);
+        this.emitter.emit('message', record);
+        this.emitter.emit(`message:${topic}`, record);
 
-    return { topic, partition, offset: String(lastOffset) };
+        return { topic, partition, offset: String(lastOffset) };
+      },
+    );
   }
 
   async consume<T>(
@@ -209,7 +220,16 @@ export class InMemoryBrokerAdapter implements IMessageBroker {
     };
 
     try {
-      await subscription.handler(message, context);
+      await withSpan(
+        'consume',
+        {
+          'messaging.destination': message.topic,
+          topic: message.topic,
+          partition: message.partition,
+          offset: message.offset,
+        },
+        () => subscription.handler(message, context),
+      );
     } catch {
       // Handler errors are surfaced through the app's retry/DLQ wrapper.
     }

@@ -1,10 +1,12 @@
 import type { ProduceResult } from '@nodejs-kafka/broker';
-import type { OutboxRow, TelemetryClient } from '@nodejs-kafka/infra';
+import type { AppMetrics, OutboxRow, TelemetryClient } from '@nodejs-kafka/infra';
 
 export function makeProducedHook(
   telemetry: TelemetryClient,
+  metrics?: AppMetrics,
 ): (published: { row: OutboxRow; result: ProduceResult }) => Promise<void> {
   return async (published) => {
+    metrics?.outboxPublishedTotal.labels({ topic: published.row.topic }).inc();
     const payload = published.row.payload as { eventId?: string; orderId?: string };
     await telemetry.emit({
       type: 'produced',

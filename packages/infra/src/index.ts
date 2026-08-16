@@ -8,3 +8,5 @@ export * from './retry-topic.js';
 export * from './shutdown.js';
 export * from './publisher.js';
 export * from './telemetry.js';
+export * from './metrics.js';
+export * from './tracing.js';

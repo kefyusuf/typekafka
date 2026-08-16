@@ -9,15 +9,31 @@ import {
   type OrderCreated,
 } from '@nodejs-kafka/domain';
 import {
+  createMetrics,
   DlqManager,
   RetryTopicScheduler,
   TypedPublisher,
   type AppLogger,
 } from '@nodejs-kafka/infra';
+import type { Counter, Histogram } from 'prom-client';
 import { createHandlerRunner } from '../src/handler-runner.js';
 import { createRetryTopicRunner } from '../src/retry-runner.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function counterValue(metric: Counter<string>, topic: string): Promise<number> {
+  const values = (await metric.get()).values;
+  return values.find((v) => v.labels['topic'] === topic)?.value ?? 0;
+}
+
+async function handlerObservations(
+  metric: Histogram<string>,
+  topic: string,
+): Promise<number> {
+  const values = (await metric.get()).values;
+  return values.find((v) => v.labels['topic'] === topic && v.labels['le'] === '+Inf')
+    ?.value ?? 0;
+}
 
 const noopLogger = {
   info: () => {},
@@ -211,6 +227,48 @@ describe('consumer retry topic pipeline (park -> parse -> retry -> schedule/DLQ 
 
     expect(deadLettered).toHaveLength(1);
     expect(deadLettered[0]!.value).toMatchObject({ attempts: 2 });
+
+    await broker.disconnect();
+  });
+
+  it('records retry runner metrics when metrics are provided', async () => {
+    const { broker, dlq, scheduler } = await createRetryHarness();
+
+    const metrics = createMetrics();
+
+    const runner = createRetryTopicRunner(
+      scheduler,
+      dlq,
+      {
+        parse: (value) => parseEvent('orders.created', value),
+        handler: async () => {
+          throw new Error('provider timed out');
+        },
+        attempts: 2,
+        baseDelayMs: 1,
+        metrics,
+      },
+      noopLogger,
+    );
+    await broker.consume([RETRY_TOPIC], runner, { manualCommit: true });
+
+    const msg = retryMessage({
+      headers: {
+        'retry-count': '2',
+        'next-deliver-at': new Date(Date.now() - 5).toISOString(),
+      },
+    });
+    await broker.produce(RETRY_TOPIC, msg.value, { key: msg.key, headers: msg.headers });
+    await sleep(30);
+
+    // One delivery: parse succeeds, so the message is counted as consumed.
+    expect(await counterValue(metrics.messagesConsumed, RETRY_TOPIC)).toBe(1);
+    // The handler fails attempt 1, so one retry is recorded before the final attempt.
+    expect(await counterValue(metrics.retriesTotal, RETRY_TOPIC)).toBe(1);
+    // At max deliveries (retry-count 2) the message dead-letters.
+    expect(await counterValue(metrics.dlqTotal, RETRY_TOPIC)).toBe(1);
+    // The handler is invoked once per attempt (2).
+    expect(await handlerObservations(metrics.handlerDurationMs, RETRY_TOPIC)).toBe(2);
 
     await broker.disconnect();
   });

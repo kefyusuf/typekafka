@@ -84,6 +84,10 @@ services:
       BROKER_BROKERS: kafka:9092
       LOG_LEVEL: info
       SCHEMA_REGISTRY_URL: ${SCHEMA_REGISTRY_URL:-}
+      # Observability (inert without the observability profile)
+      METRICS_PORT: "9464"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+      OTEL_SERVICE_NAME: producer
     depends_on:
       kafka:
         condition: service_healthy
@@ -101,6 +105,10 @@ services:
       CONSUMER_FROM_BEGINNING: "true"
       LOG_LEVEL: info
       SCHEMA_REGISTRY_URL: ${SCHEMA_REGISTRY_URL:-}
+      # Observability (inert without the observability profile)
+      METRICS_PORT: "9465"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+      OTEL_SERVICE_NAME: consumer
     depends_on:
       kafka:
         condition: service_healthy
@@ -121,6 +129,9 @@ services:
       TELEMETRY_GROUP_ID: web-telemetry
       SCHEMA_REGISTRY_URL: ${SCHEMA_REGISTRY_URL:-}
       OUTBOX_DB_PATH: /data/outbox.db
+      # Observability (inert without the observability profile)
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+      OTEL_SERVICE_NAME: web
     volumes:
       - web-outbox:/data
     depends_on:
@@ -141,9 +152,55 @@ services:
       LOG_LEVEL: info
       CUSTOMER_VIEW_PORT: "3001"
       SCHEMA_REGISTRY_URL: ${SCHEMA_REGISTRY_URL:-}
+      # Observability (inert without the observability profile)
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+      OTEL_SERVICE_NAME: customer-view
     depends_on:
       kafka:
         condition: service_healthy
+
+  # ---- Observability profile (Phase 3a) ----
+  # otel-collector receives OTLP traces over HTTP from the app services and
+  # dumps them to stdout via the debug exporter; prometheus scrapes the four
+  # app metric endpoints plus the collector's own /metrics; grafana visualizes
+  # them with a provisioned Prometheus datasource and the nodejs-kafka
+  # dashboard. All three run only with: docker compose --profile observability up.
+
+  otel-collector:
+    # 0.111.0 pinned: known-good contrib release for the otlp receiver +
+    # debug exporter used here; avoids drift from a `latest` tag.
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    container_name: nodejs-kafka-otel-collector
+    command: --config /etc/otel-collector.yaml
+    volumes:
+      - ./compose/observability/otel-collector.yaml:/etc/otel-collector.yaml:ro
+    ports:
+      - "4318:4318"
+    profiles: ["observability"]
+
+  prometheus:
+    # v2.53.0 pinned: stable release; newer majors change CLI flags.
+    image: prom/prometheus:v2.53.0
+    container_name: nodejs-kafka-prometheus
+    command: --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./compose/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    profiles: ["observability"]
+
+  grafana:
+    # 11.1.0 pinned: supports dashboard schemaVersion 39 used here.
+    image: grafana/grafana:11.1.0
+    container_name: nodejs-kafka-grafana
+    ports:
+      - "3002:3000" # host 3000 is taken by the web app
+    volumes:
+      - ./compose/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./compose/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    profiles: ["observability"]
 
 volumes:
   web-outbox:

@@ -7,6 +7,7 @@ import type {
 } from '@nodejs-kafka/infra';
 import { withRetry } from '@nodejs-kafka/infra';
 import { setTimeout as sleep } from 'node:timers/promises';
+import type { ConsumerMetrics } from './handler-runner.js';
 
 export interface RetryHandlerConfig<T> {
   /** Validates/transforms the raw payload before calling `handler`. */
@@ -20,6 +21,8 @@ export interface RetryHandlerConfig<T> {
   telemetry?: TelemetryClient;
   /** Consumer group id, used in telemetry copy. */
   groupId?: string;
+  /** Optional prometheus metrics; skipped when not provided. */
+  metrics?: ConsumerMetrics;
 }
 
 /**
@@ -49,6 +52,7 @@ export function createRetryTopicRunner<T>(
     const eventId = typeof raw['eventId'] === 'string' ? raw['eventId'] : 'unknown';
     const orderId = typeof raw['orderId'] === 'string' ? raw['orderId'] : 'unknown';
     const telemetry = config.telemetry;
+    const metrics = config.metrics;
     const groupLabel = config.groupId ?? 'consumer';
 
     // --- 1. retry headers + parking ---
@@ -103,10 +107,13 @@ export function createRetryTopicRunner<T>(
         message: 'Retry payload failed schema validation — sent straight to DLQ',
         concept: 'schema-validation',
       });
+      metrics?.dlqTotal.labels({ topic: message.topic }).inc();
       await dlq.deadLetter(message, error, retryCount);
       await context.commit();
       return;
     }
+
+    metrics?.messagesConsumed.labels({ topic: message.topic }).inc();
 
     await telemetry?.emit({
       type: 'consumed',
@@ -122,9 +129,19 @@ export function createRetryTopicRunner<T>(
     // --- 3. retry business handler ---
     try {
       await withRetry(
-        () => config.handler(payload),
+        async () => {
+          const startedAt = performance.now();
+          try {
+            return await config.handler(payload);
+          } finally {
+            metrics?.handlerDurationMs
+              .labels({ topic: message.topic })
+              .observe(performance.now() - startedAt);
+          }
+        },
         { attempts, baseDelayMs },
         (state, error) => {
+          metrics?.retriesTotal.labels({ topic: message.topic }).inc();
           void telemetry?.emit({
             type: 'retrying',
             topic: message.topic,
@@ -172,6 +189,7 @@ export function createRetryTopicRunner<T>(
           message: 'Handler exhausted retries — message sent to orders.dlq',
           concept: 'dead-letter-queue',
         });
+        metrics?.dlqTotal.labels({ topic: message.topic }).inc();
         await dlq.deadLetter(message, error, retryCount);
         await context.commit();
         return;

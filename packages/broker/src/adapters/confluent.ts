@@ -15,6 +15,7 @@ import type {
 import type { BrokerConfig, BrokerLogger } from '../config.js';
 import { JsonCodec, type MessageCodec } from '../codec/index.js';
 import { BrokerError, BrokerStateError } from '../errors.js';
+import { withSpan } from '../trace.js';
 
 const SECURITY_PROTOCOL_PLAIN = 'plaintext';
 const SECURITY_PROTOCOL_SASL = 'sasl_plaintext';
@@ -189,30 +190,41 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
     options: ProduceOptions = {},
   ): Promise<ProduceResult> {
     try {
-      const producer = await this.getProducer();
-      const [record] = await producer.send({
-        topic,
-        messages: [
-          {
-            value: await this.codec.serialize(topic, value),
-            key: options.key ?? null,
-            headers: toKafkaHeaders(options.headers),
-            partition: options.partition,
-          },
-        ],
-      });
+      return await withSpan(
+        'produce',
+        {
+          'messaging.system': 'kafka',
+          'messaging.destination': topic,
+        },
+        async () => {
+          const producer = await this.getProducer();
+          const [record] = await producer.send({
+            topic,
+            messages: [
+              {
+                value: await this.codec.serialize(topic, value),
+                key: options.key ?? null,
+                headers: toKafkaHeaders(options.headers),
+                partition: options.partition,
+              },
+            ],
+          });
 
-      if (!record) {
-        throw new BrokerError(`produce to "${topic}" failed: no metadata returned`);
-      }
+          if (!record) {
+            throw new BrokerError(
+              `produce to "${topic}" failed: no metadata returned`,
+            );
+          }
 
-      // The driver's KafkaJS facade reports the produced offset in
-      // `baseOffset` (it never sets `offset` on real Kafka).
-      return {
-        topic: record.topicName,
-        partition: record.partition,
-        offset: record.baseOffset?.toString() ?? record.offset ?? '',
-      };
+          // The driver's KafkaJS facade reports the produced offset in
+          // `baseOffset` (it never sets `offset` on real Kafka).
+          return {
+            topic: record.topicName,
+            partition: record.partition,
+            offset: record.baseOffset?.toString() ?? record.offset ?? '',
+          };
+        },
+      );
     } catch (error) {
       throw toBrokerError(`produce to "${topic}" failed`, error);
     }
@@ -278,7 +290,16 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
 
         // If the handler throws (e.g. the DLQ write itself failed), the driver
         // seeks back to this offset and reprocesses it — at-least-once delivery.
-        await handler(kafkaMessage, context);
+        await withSpan(
+          'consume',
+          {
+            'messaging.destination': topic,
+            topic,
+            partition,
+            offset: message.offset,
+          },
+          () => handler(kafkaMessage, context),
+        );
       },
     });
 

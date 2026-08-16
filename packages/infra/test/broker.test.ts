@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildBrokerConfig } from '../src/broker.js';
-import type { AppConfig } from '../src/config.js';
+import { loadConfig, type AppConfig } from '../src/config.js';
 
 const baseConfig: AppConfig = {
   driver: 'in-memory',
@@ -13,6 +13,9 @@ const baseConfig: AppConfig = {
   webPort: 3000,
   telemetryGroupId: 'web-telemetry',
   schemaRegistryUrl: '',
+  otelEndpoint: '',
+  otelServiceName: '',
+  metricsPort: '',
 };
 
 describe('buildBrokerConfig', () => {
@@ -47,5 +50,31 @@ describe('buildBrokerConfig', () => {
     });
     expect(cfg.connection.clientId).toBe('nodejs-kafka-demo-consumer');
     expect(cfg.memoryAutoCommit).toBe(false);
+  });
+});
+
+describe('loadConfig observability envs', () => {
+  it('defaults the OTel and metrics envs to disabled', () => {
+    const cfg = loadConfig({});
+    expect(cfg.otelEndpoint).toBe('');
+    expect(cfg.otelServiceName).toBe('');
+    expect(cfg.metricsPort).toBe('');
+  });
+
+  it('maps a valid METRICS_PORT through', () => {
+    const cfg = loadConfig({ METRICS_PORT: '9464' });
+    expect(cfg.metricsPort).toBe('9464');
+  });
+
+  it('rejects an invalid METRICS_PORT with a descriptive error', () => {
+    expect(() => loadConfig({ METRICS_PORT: 'abc' })).toThrow(
+      /METRICS_PORT must be empty or a positive integer/,
+    );
+  });
+
+  it('rejects a non-positive METRICS_PORT', () => {
+    expect(() => loadConfig({ METRICS_PORT: '-1' })).toThrow(
+      /METRICS_PORT must be empty or a positive integer/,
+    );
   });
 });
