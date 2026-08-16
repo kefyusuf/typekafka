@@ -1,10 +1,15 @@
 import { parseArgs } from 'node:util';
 import { createBroker } from '@nodejs-kafka/broker';
 import {
+  CUSTOMER_TOPIC,
   TOPIC_ORDER_CREATED,
   TOPIC_PAYMENT_COMPLETED,
+  applyOrder,
+  applyPayment,
   createSampleOrder,
   createSamplePayment,
+  toCustomerUpdated,
+  type CustomerState,
 } from '@nodejs-kafka/domain';
 import {
   buildBrokerConfig,
@@ -48,9 +53,12 @@ async function main(): Promise<void> {
   await broker.createTopics([
     { name: TOPIC_ORDER_CREATED, numPartitions: 3 },
     { name: TOPIC_PAYMENT_COMPLETED, numPartitions: 3 },
+    { name: CUSTOMER_TOPIC, numPartitions: 3, configEntries: { 'cleanup.policy': 'compact' } },
   ]);
 
   logger.info({ count, delayMs }, 'producing events');
+
+  const customers = new Map<string, CustomerState>();
 
   for (let i = 1; i <= count; i++) {
     const order = createSampleOrder(i);
@@ -62,6 +70,13 @@ async function main(): Promise<void> {
     const payment = createSamplePayment(order);
     const paymentResult = await publisher.publish('payments.completed', payment, { key });
     logProduced(logger, 'payments.completed', payment.eventId, paymentResult.partition, paymentResult.offset);
+
+    const customerState = customers.get(order.customerId);
+    const nextState = applyPayment(applyOrder(customerState, order), payment);
+    customers.set(order.customerId, nextState);
+    const customerEvent = toCustomerUpdated(nextState);
+    const customerResult = await publisher.publish(CUSTOMER_TOPIC, customerEvent, { key: customerEvent.customerId });
+    logProduced(logger, 'customers', customerEvent.eventId, customerResult.partition, customerResult.offset);
 
     if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
   }
