@@ -49,6 +49,17 @@ services:
       KAFKA_CLUSTERS_1_NAME: mirror
       KAFKA_CLUSTERS_1_BOOTSTRAPSERVERS: kafka-b:9092
       KAFKA_CLUSTERS_1_SCHEMAREGISTRY_URL: ${KAFKA_UI_SCHEMAREGISTRY_URL:-http://localhost:8081}
+      # Secured cluster (SASL_SSL) — listed as down until `--profile security`
+      # brings up kafka-secured and populates the truststore on the
+      # `security-certs` volume. Matches the mirror cluster pattern above.
+      KAFKA_CLUSTERS_2_NAME: secured
+      KAFKA_CLUSTERS_2_BOOTSTRAPSERVERS: kafka-secured:9095
+      KAFKA_CLUSTERS_2_SECURITY_PROTOCOL: SASL_SSL
+      KAFKA_CLUSTERS_2_SASL_MECHANISM: PLAIN
+      KAFKA_CLUSTERS_2_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="admin-secret";'
+      KAFKA_CLUSTERS_2_SSL_TRUSTSTORE_CERTS: /certs/ca.pem
+    volumes:
+      - security-certs:/certs:ro
     depends_on:
       kafka:
         condition: service_healthy
