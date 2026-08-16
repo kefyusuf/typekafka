@@ -32,7 +32,7 @@ docker-compose.yml    local Kafka stack for manual verification
 
 ## Tests
 
-- `npm test` runs the Vitest suite (84 tests; no Kafka required — tests use the in-memory driver)
+- `npm test` runs the Vitest suite (94 tests; no Kafka required — tests use the in-memory driver and `node:sqlite` `:memory:` databases)
 - Add a test for any new behavior
 - Run `npm run typecheck` and `npm run lint` before pushing
 
