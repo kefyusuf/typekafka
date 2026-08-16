@@ -119,6 +119,13 @@ services:
       WEB_PORT: "3000"
       TELEMETRY_GROUP_ID: web-telemetry
       SCHEMA_REGISTRY_URL: ${SCHEMA_REGISTRY_URL:-}
+      OUTBOX_DB_PATH: /data/outbox.db
+    volumes:
+      - web-outbox:/data
     depends_on:
       kafka:
         condition: service_healthy
+
+volumes:
+  web-outbox:
+
