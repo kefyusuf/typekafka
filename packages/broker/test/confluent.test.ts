@@ -267,6 +267,7 @@ describe('ConfluentKafkaAdapter', () => {
 
     const [consumerConfig] = mocks.consumerCreate.mock.calls[0] ?? [];
     expect(consumerConfig).toMatchObject({
+      'isolation.level': 'read_committed',
       kafkaJS: {
         groupId: 'notification-service',
         fromBeginning: true,

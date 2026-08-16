@@ -231,6 +231,7 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
 
     const manualCommit = options.manualCommit ?? false;
     const consumer = this.kafka!.consumer({
+      'isolation.level': 'read_committed',
       kafkaJS: {
         groupId: options.groupId ?? this.defaultGroupId(),
         fromBeginning: options.fromBeginning ?? true,
