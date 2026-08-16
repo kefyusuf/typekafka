@@ -19,6 +19,8 @@ import { withSpan } from '../trace.js';
 
 const SECURITY_PROTOCOL_PLAIN = 'plaintext';
 const SECURITY_PROTOCOL_SASL = 'sasl_plaintext';
+const SECURITY_PROTOCOL_SSL = 'ssl';
+const SECURITY_PROTOCOL_SASL_SSL = 'sasl_ssl';
 const PRODUCER_FLUSH_TIMEOUT_MS = 5000;
 
 interface ConsumerHandle {
@@ -431,14 +433,24 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
       'bootstrap.servers': connection.brokers.join(','),
       'client.id': connection.clientId,
       'security.protocol': connection.sasl
-        ? SECURITY_PROTOCOL_SASL
-        : SECURITY_PROTOCOL_PLAIN,
+        ? connection.ssl
+          ? SECURITY_PROTOCOL_SASL_SSL
+          : SECURITY_PROTOCOL_SASL
+        : connection.ssl
+          ? SECURITY_PROTOCOL_SSL
+          : SECURITY_PROTOCOL_PLAIN,
     };
 
     if (connection.sasl) {
       config['sasl.mechanisms'] = 'PLAIN';
       config['sasl.username'] = connection.sasl.username;
       config['sasl.password'] = connection.sasl.password;
+    }
+
+    if (connection.ssl) {
+      if (connection.ssl.ca) config['ssl.ca.location'] = connection.ssl.ca;
+      if (connection.ssl.cert) config['ssl.certificate.location'] = connection.ssl.cert;
+      if (connection.ssl.key) config['ssl.key.location'] = connection.ssl.key;
     }
 
     // NOTE: never pass `logger: undefined` — the driver checks `hasOwn` and

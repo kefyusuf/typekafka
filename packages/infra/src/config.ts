@@ -9,6 +9,9 @@ export const BrokerEnvSchema = z.object({
   BROKER_CLIENT_ID: nonEmpty('BROKER_CLIENT_ID').default('nodejs-kafka-demo'),
   BROKER_SASL_USERNAME: z.string().optional(),
   BROKER_SASL_PASSWORD: z.string().optional(),
+  BROKER_SSL_CA_PATH: z.string().default(''),
+  BROKER_SSL_CERT_PATH: z.string().default(''),
+  BROKER_SSL_KEY_PATH: z.string().default(''),
   SCHEMA_REGISTRY_URL: z.string().default(''),
   BROKER_MEMORY_AUTO_COMMIT: z
     .enum(['true', 'false'])
@@ -41,6 +44,7 @@ export interface AppConfig {
   brokers: string[];
   clientId: string;
   sasl?: { username: string; password: string };
+  ssl?: { ca?: string; cert?: string; key?: string };
   /** Schema Registry URL (Avro codec). Empty -> JSON codec. */
   schemaRegistryUrl: string;
   memoryAutoCommit: boolean;
@@ -72,6 +76,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     sasl:
       e.BROKER_SASL_USERNAME && e.BROKER_SASL_PASSWORD
         ? { username: e.BROKER_SASL_USERNAME, password: e.BROKER_SASL_PASSWORD }
+        : undefined,
+    ssl:
+      e.BROKER_SSL_CA_PATH || e.BROKER_SSL_CERT_PATH || e.BROKER_SSL_KEY_PATH
+        ? {
+            ...(e.BROKER_SSL_CA_PATH ? { ca: e.BROKER_SSL_CA_PATH } : {}),
+            ...(e.BROKER_SSL_CERT_PATH ? { cert: e.BROKER_SSL_CERT_PATH } : {}),
+            ...(e.BROKER_SSL_KEY_PATH ? { key: e.BROKER_SSL_KEY_PATH } : {}),
+          }
         : undefined,
     schemaRegistryUrl: e.SCHEMA_REGISTRY_URL,
     memoryAutoCommit: e.BROKER_MEMORY_AUTO_COMMIT,

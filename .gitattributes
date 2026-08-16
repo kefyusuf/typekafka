@@ -1,0 +1,4 @@
+# Container entrypoints and CLI configs must stay LF (Windows CRLF would break
+# the shell scripts when the compose services are built/run in Linux containers).
+*.sh text eol=lf
+*.properties text eol=lf
