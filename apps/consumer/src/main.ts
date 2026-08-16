@@ -13,14 +13,17 @@ import {
 import {
   buildBrokerConfig,
   createLogger,
+  createRetryTopicScheduler,
   createTelemetryClient,
   loadConfig,
   registerGracefulShutdown,
   DlqManager,
   TypedPublisher,
   type AppLogger,
+  type RetryTopicScheduler,
 } from '@nodejs-kafka/infra';
 import { createHandlerRunner } from './handler-runner.js';
+import { createRetryTopicRunner } from './retry-runner.js';
 
 const DEMO_EVENTS = 5;
 
@@ -41,6 +44,10 @@ async function main(): Promise<void> {
   );
 
   const dlq = new DlqManager(broker);
+  // Retry topic is a real-Kafka feature: with the in-memory driver the source
+  // runner keeps in-process retry -> DLQ (see spec §3.3 and D11).
+  const retryScheduler: RetryTopicScheduler | undefined =
+    config.driver === 'confluent' ? createRetryTopicScheduler(broker) : undefined;
   const publisher = new TypedPublisher(broker);
   // Telemetry is a real-Kafka feature: the in-memory demo keeps working as
   // before but does not emit telemetry (see spec §3.3).
@@ -61,16 +68,19 @@ async function main(): Promise<void> {
   await dlq.ensureTopic();
 
   // Topic -> handler wiring. Each handler is wrapped with parse/retry/DLQ/commit.
+  // With the retry topic (confluent), the source runner uses 2 fast in-process
+  // attempts then hops to orders.retry; otherwise it keeps 3 then DLQ.
   const runner = createHandlerRunner(
     broker,
     dlq,
     {
       parse: (value) => parseEvent('orders.created', value),
       handler: notificationHandler,
-      attempts: 3,
+      attempts: config.driver === 'confluent' ? 2 : 3,
       baseDelayMs: 50,
       telemetry,
       groupId: config.consumerGroupId,
+      ...(retryScheduler ? { retryScheduler } : {}),
     },
     logger,
   );
@@ -117,6 +127,34 @@ async function main(): Promise<void> {
       },
     ),
   ];
+
+  // Retry-topic consumer: re-processes parked/scheduled orders.retry messages,
+  // escalating delay until max deliveries, then DLQ. Confluent-only (D11).
+  if (config.driver === 'confluent' && retryScheduler) {
+    disposers.push(
+      await broker.consume(
+        [RETRY_TOPIC],
+        createRetryTopicRunner(
+          retryScheduler,
+          dlq,
+          {
+            parse: (value) => parseEvent('orders.created', value),
+            handler: notificationHandler,
+            attempts: 2,
+            baseDelayMs: 50,
+            telemetry,
+            groupId: config.consumerGroupId,
+          },
+          logger,
+        ),
+        {
+          groupId: config.consumerGroupId,
+          fromBeginning: config.consumerFromBeginning,
+          manualCommit: true,
+        },
+      ),
+    );
+  }
 
   logger.info('consumers running - press Ctrl+C to stop');
 

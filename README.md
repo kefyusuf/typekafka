@@ -6,7 +6,7 @@ This repo is a portfolio / reference project showing production-grade, event-dri
 
 - A broker **port** (`IMessageBroker`) with **two swappable adapters** — an in-memory broker (zero deps) and a real Kafka driver (Confluent).
 - **End-to-end type safety**: Zod schemas bound to topics at compile time, validated at runtime before the broker ever sees a message.
-- A production-shaped **consumer pipeline**: `parse → retry (exponential backoff + jitter) → DLQ → commit`.
+- A production-shaped **consumer pipeline**: `parse → retry (in-process backoff + jitter) → retry topic (escalating delay) → DLQ → commit` (confluent driver); in-memory keeps in-process retry → DLQ.
 - **Graceful shutdown**, **structured JSON logging** (pino), **fail-fast env validation**, and a CI pipeline.
 - A full **Docker Compose** stack with a **KRaft-mode Kafka** (no ZooKeeper) and **Kafka UI**.
 - Curated **Schema Registry + Avro** schemas (schema evolution with backward compatibility) behind the same codec seam.
@@ -141,16 +141,19 @@ raw message
    ├─ 1. parse   → Zod schema validation
    │              └─ invalid  → DLQ (original payload + diagnostics)
    ├─ 2. handler → business logic with exponential backoff retry
-   │              └─ exhausted → DLQ
-   └─ 3. commit  → offset committed only on success
+   │              └─ exhausted → orders.retry (retry-count + next-deliver-at headers)
+   ├─ 3. retry topic consumer → parks not-yet-due messages, re-processes due ones
+   │              └─ max deliveries → DLQ
+   └─ 4. commit  → offset committed only on success
 ```
 
-The runner (`createHandlerRunner`) wraps a single domain handler with the full pipeline:
+The runners (`createHandlerRunner`, `createRetryTopicRunner`) wrap a single domain handler with the full pipeline. The confluent driver uses the **hybrid model** — in-process retry, then a retry-topic hop, then DLQ; in-memory keeps in-process retry → DLQ.
 
 1. **parse** — validates the raw payload against the topic's Zod schema. Invalid messages go straight to the DLQ (`DlqManager.deadLetter`).
-2. **retry** — transient failures are retried with exponential backoff + full jitter (`withRetry` in `packages/infra/src/retry.ts`; the consumer uses `attempts: 3`, `baseDelayMs: 50`).
-3. **dlq** — after attempts are exhausted, the message is written to `orders.dlq` with diagnostics (`error`, `errorType`, `attempts`, `failedAt`) plus the original payload and headers (`dlq.original-topic`, `dlq.error-type`).
-4. **commit** — the offset is committed only when the handler (or DLQ write) succeeded, giving **at-least-once** delivery.
+2. **retry (in-process)** — transient failures are retried with exponential backoff + full jitter (`withRetry` in `packages/infra/src/retry.ts`). The confluent pipeline uses `attempts: 2`; in-memory uses `attempts: 3` (then DLQ).
+3. **retry topic** — on exhaustion (confluent only), the message is published to `orders.retry` with `retry-count`, `next-deliver-at` (ISO), and `retry.original-topic` headers (`RetryTopicScheduler` in `packages/infra/src/retry-topic.ts`). Escalating delays `[2s, 10s, 60s]`, max 3 deliveries (`retry-count >= 3`). The retry-topic consumer parks not-yet-due messages (head-of-line blocked on that partition — ordered retry) and re-processes due ones (`createRetryTopicRunner` in `apps/consumer/src/retry-runner.ts`); the retry topic carries JSON (not Avro).
+4. **dlq** — reached only after max retry-topic deliveries (or parse failure). The message is written to `orders.dlq` with diagnostics (`error`, `errorType`, `attempts`, `failedAt`) plus the original payload and headers (`dlq.original-topic`, `dlq.error-type`).
+5. **commit** — the offset is committed on success, schedule, or DLQ write, giving **at-least-once** delivery.
 
 The consumer app runs **two consumers** in the same `notification-service` group:
 
@@ -180,7 +183,7 @@ This is the recommended way to run the project: it starts Kafka, all app service
 | **Kafka** | `nodejs-kafka-kafka` | KRaft-mode broker (no ZooKeeper), listens on `9092` | — |
 | **Kafka UI** | `nodejs-kafka-ui` | Browse topics, partitions, messages and consumer-group offsets | [http://localhost:8080](http://localhost:8080) |
 | **producer** | `nodejs-kafka-producer` | Publishes a batch of order + payment events, then exits | `docker compose logs producer` |
-| **consumer** | `nodejs-kafka-consumer` | Long-running worker: `parse → retry → DLQ → commit` on `orders.created` + `payments.completed` | `docker compose logs -f consumer` |
+| **consumer** | `nodejs-kafka-consumer` | Long-running worker: `parse → retry → retry topic → DLQ → commit` on `orders.created` + `payments.completed` | `docker compose logs -f consumer` |
 | **web** | `nodejs-kafka-web` | REST + SSE server and the React flow-tracker UI | [http://localhost:3000](http://localhost:3000) |
 
 #### How the stack works
@@ -312,7 +315,7 @@ await publisher.publish('orders.created', payment);     // ❌ compile error
 | `orders.created` | `OrderCreated` | Order placed (items + totals) |
 | `payments.completed` | `PaymentCompleted` | Payment captured for an order |
 | `orders.dlq` | `DlqEntry` | Failed messages (parse failure or handler exhaustion) |
-| `orders.retry` | — | Reserved for retry topics (see roadmap) |
+| `orders.retry` | Original payload + headers | Scheduled retries — `retry-count` + `next-deliver-at` headers, escalating delay, max 3 deliveries → DLQ. JSON codec. |
 | `telemetry.events` | `TelemetryEvent` | Per-step pipeline telemetry for the live flow tracker |
 
 The sample generators (`packages/domain/src/sample/sample-events.ts`) create deterministic, spec-compliant events. Every third order is deliberately **oversized** (> 100 000 cents) so the notification handler's simulated provider timeout fires — demonstrating the retry + DLQ pipeline. Payment events mirror each order (`orderId`, `amountCents`, `method`).
@@ -330,6 +333,8 @@ type TelemetryEventType =
   | 'consumed'        // consumer picked up the message
   | 'parsed'          // payload passed Zod validation
   | 'retrying'        // handler failed, backing off
+  | 'retry-parked'    // retry message held until next-deliver-at
+  | 'retry-scheduled' // published to the retry topic (orders.retry)
   | 'dead-lettered'   // exhausted retries → DLQ
   | 'committed'       // offset committed after success
   | 'payment-recorded'// payments.completed processed
@@ -383,7 +388,7 @@ The React UI is served statically on the same origin (see `apps/web/src/ui`).
 | **Consumer groups / offsets** | `ConsumeOptions` (manual commit, group id, concurrency) |
 | **Multi-stage Docker builds** | `apps/*/Dockerfile` |
 | **KRaft Kafka (no ZooKeeper)** | `docker-compose.yml` |
-| **Unit + integration tests** | Vitest, 73 tests, no Kafka required |
+| **Unit + integration tests** | Vitest, 84 tests, no Kafka required |
 
 ---
 
@@ -412,7 +417,7 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 | `npm run build` | Compile all packages (topological order) |
 | `npm run typecheck` | `tsc --noEmit` across all packages |
 | `npm run lint` | ESLint (flat config + typescript-eslint) |
-| `npm test` | Vitest — 73 tests, runs without any Kafka |
+| `npm test` | Vitest — 84 tests, runs without any Kafka |
 | `npm run dev:producer -- --count N` | Produce N order+payment pairs (`--delay` also accepted, ms) |
 | `npm run dev:consumer` | Consumer worker (in-memory self-demo) |
 | `npm run dev:web` | Web UI — Express API on :3000, Vite dev UI on :5173 (needs real Kafka) |
@@ -422,11 +427,12 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 
 ## Tests
 
-Vitest, configured in `vitest.config.ts`. All 73 tests run **without Kafka** — they use the in-memory driver and mocks:
+Vitest, configured in `vitest.config.ts`. All 84 tests run **without Kafka** — they use the in-memory driver and mocks:
 
 | Suite | File | Tests |
 |---|---|---|
 | Retry behaviour | `packages/infra/test/retry.test.ts` | 4 |
+| Retry topic scheduler | `packages/infra/test/retry-topic.test.ts` | 6 |
 | Event schemas | `packages/domain/test/schemas.test.ts` | 6 |
 | Avro schemas (curated) | `packages/domain/test/avro-schemas.test.ts` | 3 |
 | Avro codec (Schema Registry) | `packages/broker/test/avro.test.ts` | 7 |
@@ -440,6 +446,7 @@ Vitest, configured in `vitest.config.ts`. All 73 tests run **without Kafka** —
 | Publisher | `packages/infra/test/publisher.test.ts` | 2 |
 | Dead-letter queue | `packages/infra/test/dlq.test.ts` | 1 |
 | Consumer pipeline | `apps/consumer/test/pipeline.test.ts` | 3 |
+| Retry topic pipeline | `apps/consumer/test/retry-topic.test.ts` | 5 |
 | Web server | `apps/web/test/server.test.ts` | 4 |
 
 CI (`.github/workflows/ci.yml`) runs `npm ci` → `build` → `typecheck` → `lint` → `test` on Node 22.
@@ -451,7 +458,7 @@ CI (`.github/workflows/ci.yml`) runs `npm ci` → `build` → `typecheck` → `l
 - [x] `ConfluentKafkaAdapter` — idempotent producer (`acks=all`, `enable.idempotence`), manual offset commit, consumer group rebalancing, headers
 - [x] Wire producer ↔ consumer through real Kafka in Docker (`BROKER_DRIVER=confluent`)
 - [x] KRaft-mode Kafka (no ZooKeeper) via the official `apache/kafka` image
-- [ ] Retry topic + scheduled retry (instead of in-process backoff only)
+- [x] Retry topic + scheduled retry (escalating delay, max deliveries → DLQ)
 - [ ] Kafka Streams–style aggregation / compacted topics (customer 360 view)
 - [ ] Exactly-once / transactional outbox pattern
 - [x] Schema Registry + Avro serialization for schema evolution

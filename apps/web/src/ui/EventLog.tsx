@@ -10,6 +10,8 @@ const TYPE_COLORS: Record<TelemetryEventType, string> = {
   consumed: '#2196f3',
   parsed: '#9c27b0',
   retrying: '#ff9800',
+  'retry-parked': '#ffc107',
+  'retry-scheduled': '#ffb74d',
   'dead-lettered': '#f44336',
   committed: '#009688',
   'payment-recorded': '#3f51b5',

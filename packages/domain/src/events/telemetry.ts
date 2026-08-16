@@ -7,6 +7,8 @@ export const TelemetryEventTypeSchema = z.enum([
   'consumed',
   'parsed',
   'retrying',
+  'retry-parked',
+  'retry-scheduled',
   'dead-lettered',
   'committed',
   'payment-recorded',

@@ -1,50 +1,43 @@
-import type {
-  ConsumeContext,
-  ConsumeHandler,
-  IMessageBroker,
-} from '@nodejs-kafka/broker';
+import type { ConsumeContext, ConsumeHandler } from '@nodejs-kafka/broker';
 import type {
   AppLogger,
+  DlqManager,
   RetryTopicScheduler,
   TelemetryClient,
 } from '@nodejs-kafka/infra';
 import { withRetry } from '@nodejs-kafka/infra';
-import { DlqManager } from '@nodejs-kafka/infra';
+import { setTimeout as sleep } from 'node:timers/promises';
 
-export interface HandlerConfig<T> {
+export interface RetryHandlerConfig<T> {
   /** Validates/transforms the raw payload before calling `handler`. */
   parse: (value: unknown) => T;
   /** Business handler, receives the validated payload. */
   handler: (payload: T) => Promise<void>;
-  /** Retry attempts before sending to DLQ. Defaults to 3. */
+  /** In-process retry attempts per retry-topic delivery. Defaults to 2. */
   attempts?: number;
   baseDelayMs?: number;
   /** Optional telemetry emitter; each pipeline step publishes an event. */
   telemetry?: TelemetryClient;
   /** Consumer group id, used in telemetry copy. */
   groupId?: string;
-  /**
-   * Optional scheduler: when set, exhausted retries are published to the retry
-   * topic instead of the DLQ (offset committed either way).
-   */
-  retryScheduler?: RetryTopicScheduler;
 }
 
 /**
- * Wraps a single handler with the full production pipeline:
+ * Wraps a single handler with the retry-topic delivery pipeline:
  *
- *   1. parse   -> schema validation (invalid messages go straight to DLQ)
- *   2. retry   -> exponential backoff for transient failures
- *   3. dlq     -> dead-letter topic after attempts are exhausted
- *   4. commit  -> offset committed only on success
+ *   1. park   -> hold not-yet-due messages until `next-deliver-at`
+ *   2. parse  -> schema validation (invalid messages go straight to DLQ)
+ *   3. retry  -> exponential backoff for transient failures
+ *   4. route  -> re-schedule on the retry topic, or dead-letter at max deliveries
+ *   5. commit -> offset committed only after the outcome is published
  */
-export function createHandlerRunner<T>(
-  broker: IMessageBroker,
+export function createRetryTopicRunner<T>(
+  scheduler: RetryTopicScheduler,
   dlq: DlqManager,
-  config: HandlerConfig<T>,
+  config: RetryHandlerConfig<T>,
   logger: AppLogger,
 ): ConsumeHandler<unknown> {
-  const attempts = config.attempts ?? 3;
+  const attempts = config.attempts ?? 2;
   const baseDelayMs = config.baseDelayMs ?? 100;
 
   return async (message, context: ConsumeContext) => {
@@ -58,20 +51,34 @@ export function createHandlerRunner<T>(
     const telemetry = config.telemetry;
     const groupLabel = config.groupId ?? 'consumer';
 
-    const emitCommitted = async (): Promise<void> => {
+    // --- 1. retry headers + parking ---
+    const { retryCount, nextDeliverAtMs } = scheduler.parseRetryHeaders(message.headers);
+    const parkMs = scheduler.parkDelayMs(retryCount, nextDeliverAtMs);
+    if (parkMs > 0) {
+      logger.info(
+        {
+          topic: message.topic,
+          partition: message.partition,
+          offset: message.offset,
+          retryCount,
+          parkMs,
+        },
+        'retry message parked until next-deliver-at',
+      );
       await telemetry?.emit({
-        type: 'committed',
+        type: 'retry-parked',
         topic: message.topic,
         eventId,
         orderId,
         partition: message.partition,
         offset: message.offset,
-        message: 'Offset committed — message fully processed',
-        concept: 'offset-commit',
+        message: `Retry message parked until next-deliver-at (${parkMs}ms)`,
+        concept: 'retry-topic',
       });
-    };
+      await sleep(parkMs);
+    }
 
-    // --- 1. parse / validate ---
+    // --- 2. parse / validate ---
     let payload: T;
     try {
       payload = config.parse(message.value);
@@ -81,9 +88,10 @@ export function createHandlerRunner<T>(
           topic: message.topic,
           partition: message.partition,
           offset: message.offset,
+          retryCount,
           err: error,
         },
-        'invalid message, sending to DLQ',
+        'invalid retry message, sending to DLQ',
       );
       await telemetry?.emit({
         type: 'invalid-to-dlq',
@@ -92,12 +100,11 @@ export function createHandlerRunner<T>(
         orderId,
         partition: message.partition,
         offset: message.offset,
-        message: 'Payload failed schema validation — sent straight to DLQ',
+        message: 'Retry payload failed schema validation — sent straight to DLQ',
         concept: 'schema-validation',
       });
-      await dlq.deadLetter(message, error, 0);
+      await dlq.deadLetter(message, error, retryCount);
       await context.commit();
-      await emitCommitted();
       return;
     }
 
@@ -108,21 +115,11 @@ export function createHandlerRunner<T>(
       orderId,
       partition: message.partition,
       offset: message.offset,
-      message: `Message delivered to consumer group '${groupLabel}'`,
-      concept: 'consumer-group',
-    });
-    await telemetry?.emit({
-      type: 'parsed',
-      topic: message.topic,
-      eventId,
-      orderId,
-      partition: message.partition,
-      offset: message.offset,
-      message: 'Payload validated against its Zod schema',
-      concept: 'schema-validation',
+      message: `Retry message delivered to consumer group '${groupLabel}'`,
+      concept: 'retry-topic',
     });
 
-    // --- 2. retry business handler ---
+    // --- 3. retry business handler ---
     try {
       await withRetry(
         () => config.handler(payload),
@@ -148,64 +145,74 @@ export function createHandlerRunner<T>(
               nextDelayMs: state.delayMs,
               err: error,
             },
-            'handler failed, will retry',
+            'retry handler failed, will retry',
           );
         },
       );
     } catch (error) {
-      // --- 3. retry topic or dead-letter after retries exhausted ---
-      if (config.retryScheduler) {
-        logger.warn(
+      // --- 4. exhausted: re-schedule or dead-letter at max deliveries ---
+      if (scheduler.isMaxRetries(retryCount)) {
+        logger.error(
           {
             topic: message.topic,
             partition: message.partition,
             offset: message.offset,
+            retryCount,
             err: error,
           },
-          'handler exhausted retries, scheduling on retry topic',
+          'retry message exhausted max deliveries, sending to DLQ',
         );
         await telemetry?.emit({
-          type: 'retry-scheduled',
+          type: 'dead-lettered',
           topic: message.topic,
           eventId,
           orderId,
           partition: message.partition,
           offset: message.offset,
-          message: 'Handler exhausted in-process retries — published to orders.retry',
-          concept: 'scheduled-retry',
+          message: 'Handler exhausted retries — message sent to orders.dlq',
+          concept: 'dead-letter-queue',
         });
-        await config.retryScheduler.schedule(message, error, 0);
+        await dlq.deadLetter(message, error, retryCount);
         await context.commit();
-        await emitCommitted();
         return;
       }
-      logger.error(
+
+      logger.warn(
         {
           topic: message.topic,
           partition: message.partition,
           offset: message.offset,
+          retryCount,
           err: error,
         },
-        'handler exhausted retries, sending to DLQ',
+        'retry handler exhausted, re-scheduling on retry topic',
       );
       await telemetry?.emit({
-        type: 'dead-lettered',
+        type: 'retry-scheduled',
         topic: message.topic,
         eventId,
         orderId,
         partition: message.partition,
         offset: message.offset,
-        message: 'Handler exhausted retries — message sent to orders.dlq',
-        concept: 'dead-letter-queue',
+        message: 'Handler exhausted in-process retries — re-scheduled on orders.retry',
+        concept: 'scheduled-retry',
       });
-      await dlq.deadLetter(message, error, attempts);
+      await scheduler.schedule(message, error, retryCount);
       await context.commit();
-      await emitCommitted();
       return;
     }
 
-    // --- 4. commit on success ---
+    // --- 5. commit on success ---
     await context.commit();
-    await emitCommitted();
+    await telemetry?.emit({
+      type: 'committed',
+      topic: message.topic,
+      eventId,
+      orderId,
+      partition: message.partition,
+      offset: message.offset,
+      message: 'Offset committed — message fully processed',
+      concept: 'offset-commit',
+    });
   };
 }

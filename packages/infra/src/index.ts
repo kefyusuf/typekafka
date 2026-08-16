@@ -3,6 +3,7 @@ export * from './config.js';
 export * from './logger.js';
 export * from './retry.js';
 export * from './dlq.js';
+export * from './retry-topic.js';
 export * from './shutdown.js';
 export * from './publisher.js';
 export * from './telemetry.js';
