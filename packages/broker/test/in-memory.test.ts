@@ -35,6 +35,29 @@ describe('InMemoryBrokerAdapter', () => {
     await broker.disconnect();
   });
 
+  it('round-trips a tombstone (null value) for a compacted topic', async () => {
+    const broker = makeBroker();
+    await broker.connect();
+    await broker.createTopics([{ name: 'customers', numPartitions: 1 }]);
+
+    const received: Array<{ key: string | null; value: unknown; offset: string }> = [];
+    await broker.consume(['customers'], (message, ctx) => {
+      received.push({ key: message.key, value: message.value, offset: message.offset });
+      return ctx.commit();
+    });
+
+    await broker.produce<string | null>('customers', null, { key: 'CUST-1001' });
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.value).toBeNull();
+    expect(received[0]?.key).toBe('CUST-1001');
+    expect(received[0]?.offset).toBe('0');
+
+    await broker.disconnect();
+  });
+
   it('assigns the same partition for the same key', async () => {
     const broker = makeBroker();
     await broker.connect();

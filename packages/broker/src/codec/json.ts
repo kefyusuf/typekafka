@@ -11,6 +11,9 @@ export class JsonCodec implements MessageCodec {
   readonly kind = 'json' as const;
 
   async serialize(_topic: string, value: unknown): Promise<Buffer | string | null> {
+    // A null value is a Kafka tombstone (compacted-topic delete); pass it
+    // through instead of the string 'null'.
+    if (value === null) return null;
     return JSON.stringify(value) ?? null;
   }
 
