@@ -17,7 +17,9 @@ export function applyOrder(
 ): CustomerState {
   return {
     customerId: order.customerId,
-    totalSpentCents: (state?.totalSpentCents ?? 0) + order.totalCents,
+    // Spend accumulates from payments only (applyPayment); an order just
+    // records the order count and the last order timestamp.
+    totalSpentCents: state?.totalSpentCents ?? 0,
     orderCount: (state?.orderCount ?? 0) + 1,
     lastOrderAt: order.occurredAt,
     updatedAt: order.occurredAt,

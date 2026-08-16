@@ -37,7 +37,7 @@ describe('customer changelog', () => {
 
     expect(state.customerId).toBe(order.customerId);
     expect(state.orderCount).toBe(1);
-    expect(state.totalSpentCents).toBe(order.totalCents);
+    expect(state.totalSpentCents).toBe(0);
   });
 
   it('applyOrder accumulates across orders without mutating prior state', () => {
@@ -47,10 +47,10 @@ describe('customer changelog', () => {
     const state = applyOrder(prior, second);
 
     expect(state).not.toBe(prior);
-    expect(prior.totalSpentCents).toBe(first.totalCents);
+    expect(prior.totalSpentCents).toBe(0);
     expect(prior.orderCount).toBe(1);
     expect(state.orderCount).toBe(2);
-    expect(state.totalSpentCents).toBe(first.totalCents + second.totalCents);
+    expect(state.totalSpentCents).toBe(0);
   });
 
   it('applyPayment increments totalSpentCents and leaves order fields unchanged', () => {
