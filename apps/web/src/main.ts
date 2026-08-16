@@ -11,7 +11,9 @@ import {
 import {
   buildBrokerConfig,
   createLogger,
+  createMetrics,
   createTelemetryClient,
+  initTracing,
   loadConfig,
   OutboxRelay,
   OutboxStore,
@@ -24,6 +26,13 @@ import { createWebServer } from './app.js';
 async function main(): Promise<void> {
   const config = loadConfig();
   const logger = createLogger(config.logLevel);
+
+  const tracing = initTracing({
+    endpoint: config.otelEndpoint,
+    serviceName: config.otelServiceName || 'web',
+    logger,
+  });
+  const metrics = createMetrics();
 
   if (config.driver !== 'confluent') {
     throw new Error(
@@ -55,7 +64,7 @@ async function main(): Promise<void> {
     broker,
     store: outboxStore,
     logger,
-    onPublished: makeProducedHook(telemetry),
+    onPublished: makeProducedHook(telemetry, metrics),
   });
 
   const server = createWebServer({
@@ -66,6 +75,7 @@ async function main(): Promise<void> {
     orderStore,
     outboxStore,
     relay,
+    registry: metrics.registry,
   });
 
   const { close } = await server.start(config.webPort);
@@ -76,6 +86,7 @@ async function main(): Promise<void> {
       { name: 'outbox-db', shutdown: () => db.close() },
       { name: 'broker', shutdown: () => broker.disconnect() },
       { name: 'web-server', shutdown: () => close() },
+      { name: 'tracing', shutdown: () => tracing.shutdown() },
     ],
     { logger },
   );

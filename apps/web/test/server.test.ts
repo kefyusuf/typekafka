@@ -3,10 +3,12 @@ import { DatabaseSync } from 'node:sqlite';
 import { createBroker, type IMessageBroker } from '@nodejs-kafka/broker';
 import {
   createLogger,
+  createMetrics,
   createTelemetryClient,
   OutboxRelay,
   OutboxStore,
 } from '@nodejs-kafka/infra';
+import type { Registry } from 'prom-client';
 import { createWebServer, type WebServer } from '../src/app.js';
 import { OrderStore } from '../src/order-store.js';
 import { makeProducedHook } from '../src/telemetry.js';
@@ -21,7 +23,7 @@ interface RunningServer {
   close: () => Promise<void>;
 }
 
-const setup = async (): Promise<RunningServer> => {
+const setup = async (registry?: Registry): Promise<RunningServer> => {
   const broker = createBroker({
     driver: 'in-memory',
     connection: { brokers: ['in-memory://'], clientId: 'web-test' },
@@ -51,6 +53,7 @@ const setup = async (): Promise<RunningServer> => {
     orderStore,
     outboxStore,
     relay,
+    registry,
   });
   const { port, close } = await ws.start(0);
   return { ws, port, broker, outboxStore, close };
@@ -157,5 +160,45 @@ describe('web server', () => {
 
     expect(received).toHaveLength(0);
     expect(s.outboxStore.countPending()).toBe(0);
+  });
+
+  it('GET /metrics returns prometheus text when a registry is provided', async () => {
+    const s = await setup(createMetrics().registry);
+    running.push(s);
+
+    const res = await fetch(`http://127.0.0.1:${s.port}/metrics`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/plain');
+    expect(await res.text()).toContain('nodejs_kafka_messages_produced_total');
+  });
+
+  it('GET /metrics is not mounted when no registry is provided', async () => {
+    const s = await setup();
+    running.push(s);
+
+    const res = await fetch(`http://127.0.0.1:${s.port}/metrics`);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('makeProducedHook', () => {
+  it('increments outboxPublishedTotal for the published topic when metrics are passed', async () => {
+    const metrics = createMetrics();
+    const hook = makeProducedHook(createTelemetryClient(null, logger), metrics);
+
+    await hook({
+      row: {
+        id: 1,
+        topic: 'orders.created',
+        payload: { eventId: 'evt-1', orderId: 'ORD-1' },
+        key: 'ORD-1',
+        createdAt: new Date().toISOString(),
+      },
+      result: { topic: 'orders.created', partition: 0, offset: '0' },
+    });
+
+    const values = (await metrics.outboxPublishedTotal.get()).values;
+    const topicValue = values.find((v) => v.labels['topic'] === 'orders.created');
+    expect(topicValue?.value).toBe(1);
   });
 });

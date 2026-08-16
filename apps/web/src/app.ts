@@ -9,7 +9,9 @@ import {
   type OrderCreated,
 } from '@nodejs-kafka/domain';
 import {
+  metricsMiddleware,
   type AppLogger,
+  type AppMetrics,
   type OutboxRelay,
   type OutboxStore,
 } from '@nodejs-kafka/infra';
@@ -24,6 +26,7 @@ export interface WebServerOptions {
   orderStore: OrderStore;
   outboxStore: OutboxStore;
   relay: OutboxRelay;
+  registry?: AppMetrics['registry'];
 }
 
 export interface WebServer {
@@ -32,7 +35,8 @@ export interface WebServer {
 }
 
 export function createWebServer(options: WebServerOptions): WebServer {
-  const { broker, logger, groupId, staticDir, orderStore, outboxStore, relay } = options;
+  const { broker, logger, groupId, staticDir, orderStore, outboxStore, relay, registry } =
+    options;
   const hub = new SseHub();
 
   const app = express();
@@ -44,6 +48,10 @@ export function createWebServer(options: WebServerOptions): WebServer {
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true });
   });
+
+  if (registry) {
+    app.get('/metrics', metricsMiddleware(registry));
+  }
 
   app.post('/api/orders', async (req, res) => {
     const body = (req.body ?? {}) as {

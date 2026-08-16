@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { IMessageBroker, KafkaMessage } from '@nodejs-kafka/broker';
 import { CUSTOMER_TOPIC, type CustomerUpdated } from '@nodejs-kafka/domain';
-import { createLogger } from '@nodejs-kafka/infra';
+import { createLogger, createMetrics } from '@nodejs-kafka/infra';
+import type { Registry } from 'prom-client';
 import { createCustomerViewServer, type CustomerViewServer } from '../src/app.js';
 import { CustomerStore } from '../src/customer-store.js';
 
@@ -66,10 +67,10 @@ interface RunningServer {
   close: () => Promise<void>;
 }
 
-const setup = async (): Promise<RunningServer> => {
+const setup = async (registry?: Registry): Promise<RunningServer> => {
   const { broker, produce } = createMockBroker();
   const store = new CustomerStore();
-  const ws = createCustomerViewServer({ broker, logger, store });
+  const ws = createCustomerViewServer({ broker, logger, store, registry });
   const { port, close } = await ws.start(0);
   return { ws, port, broker, produce, store, close };
 };
@@ -158,5 +159,23 @@ describe('customer view server', () => {
     expect(typeof s.port).toBe('number');
     await s.close();
     await expect(s.close()).resolves.toBeUndefined();
+  });
+
+  it('GET /metrics returns prometheus text when a registry is provided', async () => {
+    const s = await setup(createMetrics().registry);
+    running.push(s);
+
+    const res = await fetch(`http://127.0.0.1:${s.port}/metrics`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/plain');
+    expect(await res.text()).toContain('nodejs_kafka_messages_consumed_total');
+  });
+
+  it('GET /metrics is not mounted when no registry is provided', async () => {
+    const s = await setup();
+    running.push(s);
+
+    const res = await fetch(`http://127.0.0.1:${s.port}/metrics`);
+    expect(res.status).toBe(404);
   });
 });

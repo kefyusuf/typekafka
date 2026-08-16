@@ -2,13 +2,18 @@ import { createServer } from 'node:http';
 import express from 'express';
 import type { IMessageBroker } from '@nodejs-kafka/broker';
 import { CUSTOMER_TOPIC } from '@nodejs-kafka/domain';
-import type { AppLogger } from '@nodejs-kafka/infra';
+import {
+  metricsMiddleware,
+  type AppLogger,
+  type AppMetrics,
+} from '@nodejs-kafka/infra';
 import { type CustomerStore } from './customer-store.js';
 
 export interface CustomerViewServerOptions {
   broker: IMessageBroker;
   logger: AppLogger;
   store: CustomerStore;
+  registry?: AppMetrics['registry'];
 }
 
 export interface CustomerViewServer {
@@ -19,7 +24,7 @@ export interface CustomerViewServer {
 export function createCustomerViewServer(
   options: CustomerViewServerOptions,
 ): CustomerViewServer {
-  const { broker, store } = options;
+  const { broker, store, registry } = options;
 
   const app = express();
   app.use(express.json());
@@ -27,6 +32,10 @@ export function createCustomerViewServer(
   app.get('/health', (_req, res) => {
     res.json({ ok: true });
   });
+
+  if (registry) {
+    app.get('/metrics', metricsMiddleware(registry));
+  }
 
   app.get('/customers', (_req, res) => {
     res.json(store.list());
