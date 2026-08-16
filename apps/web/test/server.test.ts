@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { DatabaseSync } from 'node:sqlite';
 import { createBroker, type IMessageBroker } from '@nodejs-kafka/broker';
-import { createLogger } from '@nodejs-kafka/infra';
+import {
+  createLogger,
+  createTelemetryClient,
+  OutboxRelay,
+  OutboxStore,
+} from '@nodejs-kafka/infra';
 import { createWebServer, type WebServer } from '../src/app.js';
+import { OrderStore } from '../src/order-store.js';
+import { makeProducedHook } from '../src/telemetry.js';
 
 const logger = createLogger('silent');
 
@@ -9,6 +17,7 @@ interface RunningServer {
   ws: WebServer;
   port: number;
   broker: IMessageBroker;
+  outboxStore: OutboxStore;
   close: () => Promise<void>;
 }
 
@@ -25,9 +34,26 @@ const setup = async (): Promise<RunningServer> => {
     { name: 'telemetry.events', numPartitions: 3 },
   ]);
 
-  const ws = createWebServer({ broker, logger, groupId: 'web-telemetry-test' });
+  const db = new DatabaseSync(':memory:');
+  const orderStore = new OrderStore(db);
+  const outboxStore = new OutboxStore(db);
+  const relay = new OutboxRelay({
+    broker,
+    store: outboxStore,
+    logger,
+    transactional: false,
+    onPublished: makeProducedHook(createTelemetryClient(broker, logger)),
+  });
+  const ws = createWebServer({
+    broker,
+    logger,
+    groupId: 'web-telemetry-test',
+    orderStore,
+    outboxStore,
+    relay,
+  });
   const { port, close } = await ws.start(0);
-  return { ws, port, broker, close };
+  return { ws, port, broker, outboxStore, close };
 };
 
 const running: RunningServer[] = [];
@@ -90,7 +116,7 @@ describe('web server', () => {
     expect(buffer).toContain('"topic":"orders.created"');
   });
 
-  it('returns 502 when the broker is disconnected', async () => {
+  it('persists the order locally when the broker is disconnected', async () => {
     const s = await setup();
     running.push(s);
     await s.broker.disconnect();
@@ -100,7 +126,8 @@ describe('web server', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ sku: 'MUG-WHITE', quantity: 1, unitPriceCents: 100 }),
     });
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(201);
+    expect(s.outboxStore.countPending()).toBe(2);
   });
 
   it('rejects invalid order input with 400 and produces nothing', async () => {
@@ -129,5 +156,6 @@ describe('web server', () => {
     }
 
     expect(received).toHaveLength(0);
+    expect(s.outboxStore.countPending()).toBe(0);
   });
 });

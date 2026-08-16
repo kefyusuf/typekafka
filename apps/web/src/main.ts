@@ -1,5 +1,6 @@
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { createBroker } from '@nodejs-kafka/broker';
 import {
@@ -10,9 +11,14 @@ import {
 import {
   buildBrokerConfig,
   createLogger,
+  createTelemetryClient,
   loadConfig,
+  OutboxRelay,
+  OutboxStore,
   registerGracefulShutdown,
 } from '@nodejs-kafka/infra';
+import { OrderStore } from './order-store.js';
+import { makeProducedHook } from './telemetry.js';
 import { createWebServer } from './app.js';
 
 async function main(): Promise<void> {
@@ -39,11 +45,27 @@ async function main(): Promise<void> {
   const here = dirname(fileURLToPath(import.meta.url));
   const staticDir = resolve(here, 'client');
 
+  const dbPath = process.env.OUTBOX_DB_PATH ?? 'data/outbox.db';
+  mkdirSync(dirname(resolve(dbPath)), { recursive: true });
+  const db = new DatabaseSync(dbPath);
+  const orderStore = new OrderStore(db);
+  const outboxStore = new OutboxStore(db);
+  const telemetry = createTelemetryClient(broker, logger);
+  const relay = new OutboxRelay({
+    broker,
+    store: outboxStore,
+    logger,
+    onPublished: makeProducedHook(telemetry),
+  });
+
   const server = createWebServer({
     broker,
     logger,
     groupId: config.telemetryGroupId,
     staticDir: existsSync(staticDir) ? staticDir : undefined,
+    orderStore,
+    outboxStore,
+    relay,
   });
 
   const { close } = await server.start(config.webPort);
@@ -51,8 +73,9 @@ async function main(): Promise<void> {
 
   registerGracefulShutdown(
     [
-      { name: 'web-server', shutdown: () => close() },
+      { name: 'outbox-db', shutdown: () => db.close() },
       { name: 'broker', shutdown: () => broker.disconnect() },
+      { name: 'web-server', shutdown: () => close() },
     ],
     { logger },
   );

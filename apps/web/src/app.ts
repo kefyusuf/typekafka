@@ -4,17 +4,16 @@ import express from 'express';
 import type { Disposer, IMessageBroker } from '@nodejs-kafka/broker';
 import {
   TELEMETRY_TOPIC,
-  TOPIC_ORDER_CREATED,
-  TOPIC_PAYMENT_COMPLETED,
   TelemetryEventSchema,
   createSamplePayment,
   type OrderCreated,
 } from '@nodejs-kafka/domain';
 import {
-  createTelemetryClient,
   type AppLogger,
-  type TelemetryClient,
+  type OutboxRelay,
+  type OutboxStore,
 } from '@nodejs-kafka/infra';
+import { type OrderStore } from './order-store.js';
 import { SseHub } from './sse.js';
 
 export interface WebServerOptions {
@@ -22,6 +21,9 @@ export interface WebServerOptions {
   logger: AppLogger;
   groupId: string;
   staticDir?: string;
+  orderStore: OrderStore;
+  outboxStore: OutboxStore;
+  relay: OutboxRelay;
 }
 
 export interface WebServer {
@@ -30,9 +32,8 @@ export interface WebServer {
 }
 
 export function createWebServer(options: WebServerOptions): WebServer {
-  const { broker, logger, groupId, staticDir } = options;
+  const { broker, logger, groupId, staticDir, orderStore, outboxStore, relay } = options;
   const hub = new SseHub();
-  const telemetry: TelemetryClient = createTelemetryClient(broker, logger);
 
   const app = express();
   app.use(express.json());
@@ -81,44 +82,18 @@ export function createWebServer(options: WebServerOptions): WebServer {
       totalCents: quantity * unitPriceCents,
     };
 
+    const payment = createSamplePayment(order);
+
     try {
-      const orderResult = await broker.produce(TOPIC_ORDER_CREATED, order, {
-        key: order.orderId,
-      });
-      await telemetry.emit({
-        type: 'produced',
-        topic: TOPIC_ORDER_CREATED,
-        eventId: order.eventId,
-        orderId: order.orderId,
-        partition: orderResult.partition,
-        offset: orderResult.offset,
-        message: `Order of ${order.totalCents} cents published to ${TOPIC_ORDER_CREATED}`,
-        concept: 'partition-key',
-      });
-
-      const payment = createSamplePayment(order);
-      const paymentResult = await broker.produce(TOPIC_PAYMENT_COMPLETED, payment, {
-        key: order.orderId,
-      });
-      await telemetry.emit({
-        type: 'produced',
-        topic: TOPIC_PAYMENT_COMPLETED,
-        eventId: payment.eventId,
-        orderId: order.orderId,
-        partition: paymentResult.partition,
-        offset: paymentResult.offset,
-        message: `Payment of ${payment.amountCents} cents published to ${TOPIC_PAYMENT_COMPLETED}`,
-        concept: 'partition-key',
-      });
-
+      orderStore.createOrderWithOutbox(order, payment, outboxStore);
       res.status(201).json({
         orderId: order.orderId,
         totalCents: order.totalCents,
         oversized: order.totalCents > 100_000,
       });
     } catch (error) {
-      logger.error({ err: error }, 'failed to publish order');
-      res.status(502).json({ error: 'Failed to publish order to Kafka' });
+      logger.error({ err: error }, 'failed to persist order');
+      res.status(500).json({ error: 'Failed to persist order' });
     }
   });
 
@@ -134,6 +109,7 @@ export function createWebServer(options: WebServerOptions): WebServer {
 
   const server = createServer(app);
   let consumer: Disposer | null = null;
+  let relayDisposer: Disposer | null = null;
 
   return {
     app,
@@ -146,6 +122,8 @@ export function createWebServer(options: WebServerOptions): WebServer {
         },
         { groupId, fromBeginning: true, manualCommit: false },
       );
+
+      relayDisposer = await relay.start();
 
       await new Promise<void>((resolve, reject) => {
         const onError = (err: Error) => reject(err);
@@ -161,6 +139,7 @@ export function createWebServer(options: WebServerOptions): WebServer {
       return {
         port: actual,
         async close() {
+          if (relayDisposer) await relayDisposer().catch(() => {});
           if (consumer) await consumer();
           await new Promise<void>((r) => server.close(() => r()));
         },
