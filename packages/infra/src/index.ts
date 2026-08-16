@@ -1,5 +1,6 @@
 export * from './broker.js';
 export * from './config.js';
+export * from './outbox.js';
 export * from './logger.js';
 export * from './retry.js';
 export * from './dlq.js';
