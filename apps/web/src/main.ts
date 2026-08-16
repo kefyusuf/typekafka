@@ -74,8 +74,8 @@ async function main(): Promise<void> {
   registerGracefulShutdown(
     [
       { name: 'outbox-db', shutdown: () => db.close() },
-      { name: 'web-server', shutdown: () => close() },
       { name: 'broker', shutdown: () => broker.disconnect() },
+      { name: 'web-server', shutdown: () => close() },
     ],
     { logger },
   );
