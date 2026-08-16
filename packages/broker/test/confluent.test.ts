@@ -123,6 +123,91 @@ describe('ConfluentKafkaAdapter', () => {
     await broker.disconnect();
   });
 
+  it('maps sasl + ssl to sasl_ssl and sets the ssl locations', async () => {
+    const broker = makeBroker({
+      connection: {
+        brokers: ['kafka:9093'],
+        clientId: 'svc',
+        sasl: { username: 'user', password: 'pass' },
+        ssl: { ca: '/certs/ca.pem', cert: '/certs/cert.pem', key: '/certs/key.pem' },
+      },
+    });
+
+    await broker.connect();
+
+    expect(mocks.kafkaInstances[0]?.config).toMatchObject({
+      'security.protocol': 'sasl_ssl',
+      'sasl.mechanisms': 'PLAIN',
+      'sasl.username': 'user',
+      'sasl.password': 'pass',
+      'ssl.ca.location': '/certs/ca.pem',
+      'ssl.certificate.location': '/certs/cert.pem',
+      'ssl.key.location': '/certs/key.pem',
+    });
+
+    await broker.disconnect();
+  });
+
+  it('only sets ssl locations that are provided', async () => {
+    const broker = makeBroker({
+      connection: {
+        brokers: ['kafka:9093'],
+        clientId: 'svc',
+        ssl: { ca: '/certs/ca.pem' },
+      },
+    });
+
+    await broker.connect();
+
+    const config = mocks.kafkaInstances[0]?.config as Record<string, unknown>;
+    expect(config['security.protocol']).toBe('ssl');
+    expect(config['ssl.ca.location']).toBe('/certs/ca.pem');
+    expect(config).not.toHaveProperty('ssl.certificate.location');
+    expect(config).not.toHaveProperty('ssl.key.location');
+
+    await broker.disconnect();
+  });
+
+  it('uses ssl without sasl', async () => {
+    const broker = makeBroker({
+      connection: {
+        brokers: ['kafka:9093'],
+        clientId: 'svc',
+        ssl: { ca: '/certs/ca.pem' },
+      },
+    });
+
+    await broker.connect();
+
+    expect(mocks.kafkaInstances[0]?.config).toMatchObject({
+      'security.protocol': 'ssl',
+      'ssl.ca.location': '/certs/ca.pem',
+    });
+    expect(mocks.kafkaInstances[0]?.config).not.toHaveProperty('sasl.mechanisms');
+
+    await broker.disconnect();
+  });
+
+  it('keeps sasl_plaintext and omits ssl keys when sasl is set without ssl', async () => {
+    const broker = makeBroker({
+      connection: {
+        brokers: ['kafka:9092'],
+        clientId: 'svc',
+        sasl: { username: 'user', password: 'pass' },
+      },
+    });
+
+    await broker.connect();
+
+    const config = mocks.kafkaInstances[0]?.config as Record<string, unknown>;
+    expect(config['security.protocol']).toBe('sasl_plaintext');
+    expect(Object.keys(config)).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/^ssl\./)]),
+    );
+
+    await broker.disconnect();
+  });
+
   it('produces with idempotence and maps value/key/headers/partition', async () => {
     const producer = fakeProducer();
     mocks.producerCreate.mockReturnValue(producer);

@@ -51,6 +51,23 @@ describe('buildBrokerConfig', () => {
     expect(cfg.connection.clientId).toBe('nodejs-kafka-demo-consumer');
     expect(cfg.memoryAutoCommit).toBe(false);
   });
+
+  it('maps ssl paths from config into the connection', () => {
+    const cfg = buildBrokerConfig({
+      ...baseConfig,
+      ssl: { ca: '/certs/ca.pem', cert: '/certs/cert.pem', key: '/certs/key.pem' },
+    });
+    expect(cfg.connection.ssl).toEqual({
+      ca: '/certs/ca.pem',
+      cert: '/certs/cert.pem',
+      key: '/certs/key.pem',
+    });
+  });
+
+  it('omits ssl from the connection when no ssl paths are set', () => {
+    const cfg = buildBrokerConfig(baseConfig);
+    expect(cfg.connection.ssl).toBeUndefined();
+  });
 });
 
 describe('loadConfig observability envs', () => {
@@ -59,6 +76,24 @@ describe('loadConfig observability envs', () => {
     expect(cfg.otelEndpoint).toBe('');
     expect(cfg.otelServiceName).toBe('');
     expect(cfg.metricsPort).toBe('');
+  });
+
+  it('defaults all ssl envs to empty and leaves ssl undefined', () => {
+    const cfg = loadConfig({});
+    expect(cfg.ssl).toBeUndefined();
+  });
+
+  it('maps explicit ssl paths into config.ssl', () => {
+    const cfg = loadConfig({
+      BROKER_SSL_CA_PATH: '/certs/ca.pem',
+      BROKER_SSL_CERT_PATH: '/certs/cert.pem',
+      BROKER_SSL_KEY_PATH: '/certs/key.pem',
+    });
+    expect(cfg.ssl).toEqual({
+      ca: '/certs/ca.pem',
+      cert: '/certs/cert.pem',
+      key: '/certs/key.pem',
+    });
   });
 
   it('maps a valid METRICS_PORT through', () => {

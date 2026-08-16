@@ -22,6 +22,7 @@ export function buildBrokerConfig(
       brokers: config.brokers,
       clientId: `${config.clientId}${options.clientIdSuffix ?? ''}`,
       sasl: config.sasl,
+      ssl: config.ssl,
     },
     memoryAutoCommit: options.memoryAutoCommit ?? config.memoryAutoCommit,
     logger: options.logger,

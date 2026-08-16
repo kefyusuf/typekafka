@@ -9,6 +9,15 @@ export interface BrokerConnectionConfig {
     username: string;
     password: string;
   };
+  /** TLS for the confluent driver: paths to PEM files on disk. */
+  ssl?: {
+    /** CA certificate (PEM) — required for self-signed brokers. */
+    ca?: string;
+    /** Client certificate (PEM) for mutual TLS. */
+    cert?: string;
+    /** Client private key (PEM) for mutual TLS. */
+    key?: string;
+  };
 }
 
 /**
