@@ -14,8 +14,11 @@ import {
 import {
   buildBrokerConfig,
   createLogger,
+  createMetrics,
+  initTracing,
   loadConfig,
   registerGracefulShutdown,
+  startMetricsServer,
   TypedPublisher,
   type AppLogger,
 } from '@nodejs-kafka/infra';
@@ -24,6 +27,18 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const logger = createLogger(config.logLevel);
   logger.info({ driver: config.driver }, 'producer starting');
+
+  const tracing = initTracing({
+    endpoint: config.otelEndpoint,
+    serviceName: config.otelServiceName || 'producer',
+    logger,
+  });
+  const metrics = createMetrics();
+  let metricsServer: Awaited<ReturnType<typeof startMetricsServer>> | undefined;
+  if (config.metricsPort) {
+    metricsServer = await startMetricsServer(Number(config.metricsPort), metrics.registry);
+    logger.info({ port: metricsServer.port }, 'prometheus metrics server started');
+  }
 
   const { values } = parseArgs({
     options: {
@@ -65,10 +80,12 @@ async function main(): Promise<void> {
     const key = order.orderId;
 
     const orderResult = await publisher.publishOrder(order, { key });
+    metrics.messagesProduced.labels({ topic: TOPIC_ORDER_CREATED }).inc();
     logProduced(logger, 'orders.created', order.eventId, orderResult.partition, orderResult.offset);
 
     const payment = createSamplePayment(order);
     const paymentResult = await publisher.publish('payments.completed', payment, { key });
+    metrics.messagesProduced.labels({ topic: TOPIC_PAYMENT_COMPLETED }).inc();
     logProduced(logger, 'payments.completed', payment.eventId, paymentResult.partition, paymentResult.offset);
 
     const customerState = customers.get(order.customerId);
@@ -76,6 +93,7 @@ async function main(): Promise<void> {
     customers.set(order.customerId, nextState);
     const customerEvent = toCustomerUpdated(nextState);
     const customerResult = await publisher.publish(CUSTOMER_TOPIC, customerEvent, { key: customerEvent.customerId });
+    metrics.messagesProduced.labels({ topic: CUSTOMER_TOPIC }).inc();
     logProduced(logger, 'customers', customerEvent.eventId, customerResult.partition, customerResult.offset);
 
     if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
@@ -83,6 +101,8 @@ async function main(): Promise<void> {
 
   logger.info('producer finished, disconnecting');
   await broker.disconnect();
+  await tracing.shutdown();
+  await metricsServer?.close();
 }
 
 function logProduced(
