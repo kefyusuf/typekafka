@@ -15,6 +15,7 @@ This repo is a portfolio / reference project showing production-grade, event-dri
 - A **live flow tracker** — a web UI that places orders, watches the message move through the pipeline in real time, and streams per-step telemetry over SSE.
 - **Observability** — OpenTelemetry **manual spans** around `produce` / `consume` in both broker adapters (no auto-instrumentation), a **Prometheus `/metrics`** endpoint per app, and an optional `observability` compose profile (`otel-collector` → debug exporter, Prometheus scraping all apps, Grafana dashboard at `:3002`).
 - **Multi-cluster / MirrorMaker 2** — an optional `mirror` compose profile with a second single-node KRaft cluster (`kafka-b`) and a **MirrorMaker 2** worker replicating `orders.*` (`orders.created`, `orders.payment.*`, `orders.dlq`) from the primary cluster, visible as a second `mirror` cluster in Kafka UI.
+- **Security** — an optional `security` compose profile with a **SASL_SSL**-secured KRaft cluster (`kafka-secured`, PLAIN auth: `admin` super user + `app`) guarded by **topic-scoped ACLs**; self-signed certs are generated inside the container, and the confluent driver auto-selects `security.protocol` from `BROKER_SASL_*` / `BROKER_SSL_*` env vars — no app code changes.
 
 ---
 
@@ -212,6 +213,10 @@ This is the recommended way to run the project: it starts Kafka, all app service
 | **grafana** | `nodejs-kafka-grafana` | Visualizes the metrics with a provisioned Prometheus datasource + "Node.js Kafka" dashboard (*observability profile*) | [http://localhost:3002](http://localhost:3002) |
 | **kafka-b** | `nodejs-kafka-kafka-b` | Second single-node KRaft cluster (`apache/kafka:3.7.0`) — the mirror target, listens on `9094` (*mirror profile*) | — |
 | **mirror-maker** | `nodejs-kafka-mirror-maker` | MirrorMaker 2 worker replicating `orders.*` from `kafka` to `kafka-b` (*mirror profile*) | `docker compose logs mirror-maker` |
+| **kafka-secured** | `nodejs-kafka-kafka-secured` | SASL_SSL-secured KRaft broker (PLAIN auth + `AclAuthorizer`, topic ACLs), listens on `9095` (*security profile*) | — |
+| **security-init** | `nodejs-kafka-security-init` | One-shot job granting the `app` user topic-scoped ACLs on the secured cluster, then exits (*security profile*) | `docker compose logs security-init` |
+| **producer-secured** | `nodejs-kafka-producer-secured` | Publishes the demo batch over SASL_SSL as the `app` user (*security profile*) | `docker compose logs producer-secured` |
+| **consumer-secured** | `nodejs-kafka-consumer-secured` | Long-running worker over SASL_SSL as the `app` user: `parse → retry → retry topic → DLQ → commit` (*security profile*) | `docker compose logs -f consumer-secured` |
 
 #### How the stack works
 
@@ -223,6 +228,7 @@ This is the recommended way to run the project: it starts Kafka, all app service
 6. **Query the read model** — the `customer-view` service consumes `customers` in the `customer-view` group and serves the current per-customer totals over REST (`GET /customers/:id`); `DELETE /customers/:id` publishes a tombstone, so the read model evicts the customer.
 7. **Observe (optional)** — run the observability stack with `docker compose --profile observability up` alongside the base stack: the apps export OTel spans to `otel-collector` (visible in its logs via the debug exporter) and expose Prometheus metrics at `/metrics`, Prometheus scrapes all four apps (see its targets on `:9090`), and Grafana visualizes them with a provisioned datasource + dashboard on `:3002`. The default `docker compose up` (no profile) is unchanged and starts no observability infrastructure; an app only activates tracing/metrics when `OTEL_EXPORTER_OTLP_ENDPOINT` / `METRICS_PORT` are set.
 8. **Mirror (optional)** — run the mirror stack with `docker compose --profile mirror up` alongside the base stack: a second single-node KRaft cluster (`kafka-b`, host port `9094`) starts and a MirrorMaker 2 worker replicates `orders.*` (`orders.created`, `orders.payment.*`, `orders.dlq`) from the primary `kafka` cluster to it. Kafka UI on `:8080` then lists both clusters — `local` and `mirror`. The default `docker compose up` (no profile) is unchanged and starts no mirror infrastructure; the compacted `customers` topic is intentionally not mirrored.
+9. **Secure (optional)** — run the secured stack with `docker compose --profile security up` alongside the base stack: a second single-node KRaft cluster (`kafka-secured`, host port `9095`) starts with a **SASL_SSL** listener (PLAIN auth, `admin` super user + `app`), generates self-signed certs **inside the container** via the JRE's `keytool` (no host scripts), and a one-shot `security-init` job provisions the `app` user's topic-scoped ACLs. Only then do `producer-secured` / `consumer-secured` start and round-trip messages over SASL_SSL. The default `docker compose up` (no profile) is unchanged and the base `kafka` cluster stays plaintext.
 
 > State is container-local: the broker keeps its KRaft logs inside the container (no volumes). `docker compose down` therefore **resets all Kafka state**, and the next `docker compose up --build` replays the demo from the beginning.
 
@@ -280,6 +286,7 @@ Schema evolution with Schema Registry + Avro: [docs/guides/schema-registry.md](d
 Compacted topics (customer-360) with tombstones: [docs/guides/compacted-topics.md](docs/guides/compacted-topics.md)
 Observability (OTel spans + Prometheus metrics): [docs/guides/observability.md](docs/guides/observability.md)
 Multi-cluster mirroring (MirrorMaker 2): [docs/guides/multi-cluster-mirroring.md](docs/guides/multi-cluster-mirroring.md)
+Security (SASL_SSL + PLAIN auth + topic ACLs): [docs/guides/security.md](docs/guides/security.md)
 
 ---
 
@@ -294,6 +301,9 @@ All environment variables are validated **at startup** by a Zod schema (`package
 | `BROKER_CLIENT_ID` | `nodejs-kafka-demo` | Kafka client id |
 | `BROKER_SASL_USERNAME` | — | SASL/PLAIN username (only if required) |
 | `BROKER_SASL_PASSWORD` | — | SASL/PLAIN password (only if required) |
+| `BROKER_SSL_CA_PATH` | (empty) | Path to a PEM CA file used to verify the broker's TLS certificate (confluent driver) |
+| `BROKER_SSL_CERT_PATH` | (empty) | Path to a PEM client certificate (confluent driver; only needed for mTLS) |
+| `BROKER_SSL_KEY_PATH` | (empty) | Path to the PEM private key for the client certificate (confluent driver; only needed for mTLS) |
 | `SCHEMA_REGISTRY_URL` | (empty) | Schema Registry URL; enables the Avro codec (driver must be `confluent`); empty → JSON codec |
 | `BROKER_MEMORY_AUTO_COMMIT` | `true` | In-memory driver: commit offsets automatically after handler resolve |
 | `CONSUMER_GROUP_ID` | `notification-service` | Consumer group id for both consumers |
@@ -309,6 +319,8 @@ All environment variables are validated **at startup** by a Zod schema (`package
 | `METRICS_PORT` | (empty) | Port for the app's Prometheus `/metrics` HTTP server; empty → metrics server disabled |
 
 > Metric endpoints in the compose stack: producer → `producer:9464/metrics`, consumer → `consumer:9465/metrics` (both via `METRICS_PORT`), web → `web:3000/metrics`, customer-view → `customer-view:3001/metrics` (both served on their own Express port).
+
+> SASL + TLS protocol selection: `BROKER_SASL_USERNAME` / `BROKER_SASL_PASSWORD` enable **PLAIN** auth; combined with the `BROKER_SSL_*` paths, the confluent driver auto-selects `security.protocol` — `sasl_ssl` (SASL + TLS), `sasl_plaintext` (SASL only), `ssl` (TLS only), `plaintext` (neither). All empty → `plaintext`, unchanged. See the [security guide](docs/guides/security.md).
 
 > The MirrorMaker 2 flow is configured in `compose/mirror/mm2.properties` (cluster aliases, `source->target.topics = orders.*`, internal-topic replication factors) — no new user env vars; the profile is enabled with `--profile mirror`.
 
@@ -435,7 +447,7 @@ The React UI is served statically on the same origin (see `apps/web/src/ui`).
 | **Consumer groups / offsets** | `ConsumeOptions` (manual commit, group id, concurrency) |
 | **Multi-stage Docker builds** | `apps/*/Dockerfile` |
 | **KRaft Kafka (no ZooKeeper)** | `docker-compose.yml` |
-| **Unit + integration tests** | Vitest, 132 tests, no Kafka required |
+| **Unit + integration tests** | Vitest, 140 tests, no Kafka required |
 
 ---
 
@@ -465,7 +477,7 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 | `npm run build` | Compile all packages (topological order) |
 | `npm run typecheck` | `tsc --noEmit` across all packages |
 | `npm run lint` | ESLint (flat config + typescript-eslint) |
-| `npm test` | Vitest — 132 tests, runs without any Kafka |
+| `npm test` | Vitest — 140 tests, runs without any Kafka |
 | `npm run dev:producer -- --count N` | Produce N order+payment pairs (`--delay` also accepted, ms) |
 | `npm run dev:consumer` | Consumer worker (in-memory self-demo) |
 | `npm run dev:web` | Web UI — Express API on :3000, Vite dev UI on :5173 (needs real Kafka) |
@@ -476,7 +488,7 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 
 ## Tests
 
-Vitest, configured in `vitest.config.ts`. All 132 tests run **without Kafka** — they use the in-memory driver, `node:sqlite` `:memory:` databases, and mocks:
+Vitest, configured in `vitest.config.ts`. All 140 tests across 22 files run **without Kafka** — they use the in-memory driver, `node:sqlite` `:memory:` databases, and mocks:
 
 | Suite | File | Tests |
 |---|---|---|
@@ -487,10 +499,9 @@ Vitest, configured in `vitest.config.ts`. All 132 tests run **without Kafka** �
 | Customer changelog (aggregation) | `packages/domain/test/customer.test.ts` | 6 |
 | Avro schemas (curated) | `packages/domain/test/avro-schemas.test.ts` | 3 |
 | Avro codec (Schema Registry) | `packages/broker/test/avro.test.ts` | 7 |
-| Broker config wiring | `packages/infra/test/broker.test.ts` | 8 |
+| Broker config wiring (incl. SASL/TLS protocol selection) | `packages/infra/test/broker.test.ts` | 12 |
 | Telemetry schema | `packages/domain/test/telemetry.test.ts` | 4 |
-| Confluent adapter (mocked driver) | `packages/broker/test/confluent.test.ts` | 15 |
-| Transactions | `packages/broker/test/confluent.test.ts` (transactions block) | 4 |
+| Confluent adapter (mocked driver; incl. transactions + SASL/TLS config mapping) | `packages/broker/test/confluent.test.ts` | 23 |
 | In-memory broker | `packages/broker/test/in-memory.test.ts` | 8 |
 | Broker tracing (spans) | `packages/broker/test/tracing.test.ts` | 3 |
 | Codec (JSON + wiring) | `packages/broker/test/codec.test.ts` | 9 |
@@ -519,3 +530,4 @@ CI (`.github/workflows/ci.yml`) runs `npm ci` → `build` → `typecheck` → `l
 - [x] Schema Registry + Avro serialization for schema evolution
 - [x] Observability — OpenTelemetry manual spans (`produce` / `consume`) + Prometheus `/metrics` per app + optional `observability` compose profile (collector / Prometheus / Grafana)
 - [x] Multi-cluster mirroring — MirrorMaker 2 replicating `orders.*` to a second single-node KRaft cluster via the optional `mirror` compose profile
+- [x] Security — SASL_SSL (TLS + PLAIN auth) + topic-scoped ACLs on the optional `security` compose profile, with self-signed certs generated in-container (`keytool`, no host scripts) and confluent-driver TLS support via `BROKER_SSL_*` env vars
