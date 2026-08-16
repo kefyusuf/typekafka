@@ -43,6 +43,12 @@ services:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
       KAFKA_CLUSTERS_0_SCHEMAREGISTRY_URL: ${KAFKA_UI_SCHEMAREGISTRY_URL:-http://localhost:8081}
+      # Mirror cluster shows up in the UI even without the mirror profile
+      # (listed as down until `--profile mirror` is up), matching cluster 0
+      # referencing a schema registry that may not be running.
+      KAFKA_CLUSTERS_1_NAME: mirror
+      KAFKA_CLUSTERS_1_BOOTSTRAPSERVERS: kafka-b:9092
+      KAFKA_CLUSTERS_1_SCHEMAREGISTRY_URL: ${KAFKA_UI_SCHEMAREGISTRY_URL:-http://localhost:8081}
     depends_on:
       kafka:
         condition: service_healthy
@@ -64,6 +70,63 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+
+  # ---- Mirror profile (Phase 3b.1) ----
+  # kafka-b is a second single-node KRaft cluster that MirrorMaker 2 copies
+  # the orders.* topics into; mirror-maker runs the Confluent MM2 container,
+  # whose default command loads /tmp/config/mm2.properties from the mounted
+  # volume. Both run only with: docker compose --profile mirror up.
+
+  kafka-b:
+    image: apache/kafka:3.7.0
+    container_name: nodejs-kafka-kafka-b
+    profiles: ["mirror"]
+    environment:
+      # KRaft combined mode: single node runs controller + broker.
+      # Env vars use the KAFKA_ prefix and map to server.properties keys
+      # (dots -> underscores). The image auto-formats storage on first start.
+      KAFKA_NODE_ID: "2"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-b:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-b:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # Each KRaft cluster must have a unique base64 UUID, so kafka-b gets
+      # its own (different from the primary's CLUSTER_ID).
+      CLUSTER_ID: "3l8nNvzYS4uCg7TpHr0bWQ=="
+      # Single-node cluster: internal topics need replication factor 1.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      # Topics are created by the app's admin client, not auto-created.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    ports:
+      # Host 9092 is taken by the primary; 9094 exposes kafka-b for checks.
+      - "9094:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mirror-maker:
+    # 7.7.0 matches cp-schema-registry 7.7.0; the image's default command is
+    # /bin/connect-mirror-maker /tmp/config/mm2.properties, so we only mount
+    # the config.
+    image: confluentinc/cp-kafka-mirror-maker:7.7.0
+    container_name: nodejs-kafka-mirror-maker
+    profiles: ["mirror"]
+    volumes:
+      - ./compose/mirror/mm2.properties:/tmp/config/mm2.properties:ro
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-b:
+        condition: service_healthy
 
   # ---- App services (Phase 2: confluent driver, real Kafka) ----
   # Producer and consumer talk through the Kafka cluster: the producer
