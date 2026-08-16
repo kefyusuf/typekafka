@@ -161,6 +161,30 @@ describe('ConfluentKafkaAdapter', () => {
     await broker.disconnect();
   });
 
+  it('produces a tombstone as a null message value', async () => {
+    const producer = fakeProducer();
+    mocks.producerCreate.mockReturnValue(producer);
+
+    const broker = makeBroker();
+    await broker.connect();
+
+    await broker.produce<string | null>('customers.deleted', null, { key: 'CUST-1001' });
+
+    expect(producer.send).toHaveBeenCalledWith({
+      topic: 'customers.deleted',
+      messages: [
+        {
+          value: null,
+          key: 'CUST-1001',
+          headers: undefined,
+          partition: undefined,
+        },
+      ],
+    });
+
+    await broker.disconnect();
+  });
+
   it('falls back to record.offset when baseOffset is absent', async () => {
     const producer = fakeProducer({
       send: vi
@@ -308,6 +332,47 @@ describe('ConfluentKafkaAdapter', () => {
 
     await dispose();
     expect(consumer.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('delivers a null driver value as a tombstone message', async () => {
+    const consumer = fakeConsumer();
+    mocks.consumerCreate.mockReturnValue(consumer);
+
+    const broker = makeBroker();
+    await broker.connect();
+
+    let value: unknown;
+    let key: string | null = null;
+    const dispose = await broker.consume(
+      ['customers.deleted'],
+      async (message, context) => {
+        value = message.value;
+        key = message.key;
+        await context.commit();
+      },
+      { groupId: 'g', manualCommit: true },
+    );
+
+    const [runConfig] = consumer.run.mock.calls[0] ?? [];
+    await runConfig.eachMessage({
+      topic: 'customers.deleted',
+      partition: 0,
+      message: {
+        key: Buffer.from('CUST-1001'),
+        value: null,
+        headers: undefined,
+        offset: '1',
+        timestamp: '1',
+      },
+    });
+
+    expect(value).toBeNull();
+    expect(key).toBe('CUST-1001');
+    expect(consumer.commitOffsets).toHaveBeenCalledWith([
+      { topic: 'customers.deleted', partition: 0, offset: '2' },
+    ]);
+
+    await dispose();
   });
 
   it('leaves a failed JSON payload as raw text so Zod can route it to the DLQ', async () => {

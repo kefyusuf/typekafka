@@ -45,6 +45,13 @@ describe('JsonCodec', () => {
     expect(await codec.deserialize('t', null)).toBeNull();
     expect(await codec.deserialize('t', undefined)).toBeNull();
   });
+
+  it('passes a null value through serialize as a tombstone (not the string "null")', async () => {
+    const codec = new JsonCodec();
+    expect(await codec.serialize('customers.deleted', null)).toBeNull();
+    expect(await codec.deserialize('customers.deleted', null)).toBeNull();
+    expect(await codec.deserialize('customers.deleted', undefined)).toBeNull();
+  });
 });
 
 describe('codec wiring', () => {

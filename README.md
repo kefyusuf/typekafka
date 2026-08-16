@@ -11,6 +11,7 @@ This repo is a portfolio / reference project showing production-grade, event-dri
 - **Graceful shutdown**, **structured JSON logging** (pino), **fail-fast env validation**, and a CI pipeline.
 - A full **Docker Compose** stack with a **KRaft-mode Kafka** (no ZooKeeper) and **Kafka UI**.
 - Curated **Schema Registry + Avro** schemas (schema evolution with backward compatibility) behind the same codec seam.
+- **Compacted topics / customer-360** — the producer aggregates per-customer state into a KTable-style changelog on a compacted `customers` topic; the `customer-view` service replays it into an in-memory read model, deletes via tombstones (null-value records), and serves a small REST API.
 - A **live flow tracker** — a web UI that places orders, watches the message move through the pipeline in real time, and streams per-step telemetry over SSE.
 
 ---
@@ -203,27 +204,30 @@ This is the recommended way to run the project: it starts Kafka, all app service
 | **producer** | `nodejs-kafka-producer` | Publishes a batch of order + payment events, then exits | `docker compose logs producer` |
 | **consumer** | `nodejs-kafka-consumer` | Long-running worker: `parse → retry → retry topic → DLQ → commit` on `orders.created` + `payments.completed` | `docker compose logs -f consumer` |
 | **web** | `nodejs-kafka-web` | REST + SSE server, React flow-tracker UI, and the SQLite transactional outbox | [http://localhost:3000](http://localhost:3000) |
+| **customer-view** | `nodejs-kafka-customer-view` | KTable-style read model over the compacted `customers` topic (`GET/DELETE /customers`) | [http://localhost:3001](http://localhost:3001) |
 
 #### How the stack works
 
-1. **Startup order** — `kafka` starts first and is health-checked (it must answer `kafka-topics.sh --list`). `kafka-ui`, `producer`, `consumer` and `web` wait for it via `depends_on: condition: service_healthy`, so nothing connects before the broker is ready.
-2. **Topics** — the apps create their topics at startup through the broker's admin client: `orders.created`, `payments.completed`, `orders.dlq`, `telemetry.events`. `KAFKA_AUTO_CREATE_TOPICS_ENABLE=false` keeps the cluster explicit.
-3. **Produce** — the `producer` service publishes deterministic order + payment events and exits; orders placed from the web UI go through the **SQLite transactional outbox** instead (see [Web producer — transactional outbox](#web-producer--transactional-outbox)). Every third order is deliberately **oversized** (> 100 000 cents) to fire the simulated provider timeout.
+1. **Startup order** — `kafka` starts first and is health-checked (it must answer `kafka-topics.sh --list`). `kafka-ui`, `producer`, `consumer`, `web` and `customer-view` wait for it via `depends_on: condition: service_healthy`, so nothing connects before the broker is ready.
+2. **Topics** — the apps create their topics at startup through the broker's admin client: `orders.created`, `payments.completed`, `orders.dlq`, `telemetry.events`, and `customers` (compacted — created with `cleanup.policy=compact`). `KAFKA_AUTO_CREATE_TOPICS_ENABLE=false` keeps the cluster explicit.
+3. **Produce** — the `producer` service publishes deterministic order + payment events and exits; orders placed from the web UI go through the **SQLite transactional outbox** instead (see [Web producer — transactional outbox](#web-producer--transactional-outbox)). Every third order is deliberately **oversized** (> 100 000 cents) to fire the simulated provider timeout. Each order also feeds a per-customer aggregate: the producer publishes full-state `CustomerUpdated` records (key = `customerId`) to the compacted `customers` topic.
 4. **Consume** — the `consumer` reads them in the `notification-service` group and runs each message through `parse → retry → DLQ → commit`, emitting a telemetry event per step to `telemetry.events`.
 5. **Visualise** — the `web` service consumes `telemetry.events` in the `web-telemetry` group and broadcasts each event to browsers over Server-Sent Events, so the flow diagram and the event log update live.
+6. **Query the read model** — the `customer-view` service consumes `customers` in the `customer-view` group and serves the current per-customer totals over REST (`GET /customers/:id`); `DELETE /customers/:id` publishes a tombstone, so the read model evicts the customer.
 
 > State is container-local: the broker keeps its KRaft logs inside the container (no volumes). `docker compose down` therefore **resets all Kafka state**, and the next `docker compose up --build` replays the demo from the beginning.
 
 #### What to check
 
-1. **Containers are up** — `docker compose ps` shows the five services running (`Up` / `healthy`). The first build takes a while (the apps compile TypeScript inside the image); `docker compose logs -f web` prints `web UI listening` when it is ready.
+1. **Containers are up** — `docker compose ps` shows the six services running (`Up` / `healthy`). The first build takes a while (the apps compile TypeScript inside the image); `docker compose logs -f web` prints `web UI listening` when it is ready.
 2. **Kafka is healthy** — open [http://localhost:8080](http://localhost:8080) (Kafka UI):
-   - *Topics* → `orders.created`, `payments.completed`, `orders.dlq`, `telemetry.events`. Open one → *Browse messages* → the JSON payloads.
-   - *Consumer groups* → `notification-service` advances its offset as messages are consumed; `web-telemetry` advances with each telemetry event.
+   - *Topics* → `orders.created`, `payments.completed`, `orders.dlq`, `telemetry.events`, `customers`. Open one → *Browse messages* → the JSON payloads.
+   - *Consumer groups* → `notification-service` advances its offset as messages are consumed; `web-telemetry` advances with each telemetry event; `customer-view` advances with each changelog record.
 3. **The pipeline ran** — `docker compose logs consumer` shows `consumers running`, and per message: `handler failed, will retry` → `handler exhausted retries, sending to DLQ` for the oversized order, then the offset commit. `docker compose logs producer` shows `event produced` lines with `topic`, `eventId`, `partition`, `offset`.
 4. **Watch it live** — open [http://localhost:3000](http://localhost:3000) and place an order from the form. The flow diagram lights up `producer → orders.created → consumer → committed`, and the live event log streams each step (`consumed`, `parsed`, `committed`, `payment-recorded`) with topic, partition, offset and a concept tag.
 5. **Trigger retry → DLQ** — place an order with **total above 100000 cents**; the log shows `retrying` → `dead-lettered`, and the message lands in `orders.dlq` (visible in Kafka UI).
 6. **Clean up / reset** — `docker compose down` stops everything and wipes Kafka state; `docker compose up --build` starts a fresh run.
+7. **Exercise the read model** — `curl http://localhost:3001/customers` lists the aggregated customers; `curl http://localhost:3001/customers/CUST-1003` shows one customer; `curl -X DELETE http://localhost:3001/customers/CUST-1003` tombstones it (subsequent GET returns 404, and the record appears in Kafka UI's `customers` topic).
 
 ### Alternative — in-memory driver (no Docker)
 
@@ -239,9 +243,10 @@ You'll see the full pipeline in the JSON logs: orders processed, one oversized o
 
 ```bash
 npm run dev:producer -- --count 10 --delay 300
+npm run dev:customer-view   # in-memory demo: self-generates a sample changelog + tombstone, serves the read model on :3001
 ```
 
-In-memory mode uses the same port contract as real Kafka, so the semantics (topics, partition key routing, offsets) are exercised identically — but there is **no web UI** in this mode.
+In-memory mode uses the same port contract as real Kafka, so the semantics (topics, partition key routing, offsets) are exercised identically — but there is **no web UI** in this mode (the `customer-view` REST API works on :3001). The customer view self-generates records for three customers and tombstones one (CUST-1002), so `GET /customers` shows the survivors.
 
 ---
 
@@ -263,6 +268,7 @@ In-memory mode uses the same port contract as real Kafka, so the semantics (topi
 
 Step-by-step: [docs/guides/driver-switching.md](docs/guides/driver-switching.md)
 Schema evolution with Schema Registry + Avro: [docs/guides/schema-registry.md](docs/guides/schema-registry.md)
+Compacted topics (customer-360) with tombstones: [docs/guides/compacted-topics.md](docs/guides/compacted-topics.md)
 
 ---
 
@@ -286,6 +292,7 @@ All environment variables are validated **at startup** by a Zod schema (`package
 | `WEB_PORT` | `3000` | Web UI HTTP port |
 | `TELEMETRY_GROUP_ID` | `web-telemetry` | Consumer group id for the telemetry event stream |
 | `OUTBOX_DB_PATH` | `data/outbox.db` | Web app: SQLite file for the `orders` + `outbox` tables (parent dir is created on start; compose mounts a named volume at `/data`) |
+| `CUSTOMER_VIEW_PORT` | `3001` | `customer-view` service: HTTP port for the customer read model |
 
 See [`.env.example`](.env.example) for a documented copy-paste template.
 
@@ -312,7 +319,7 @@ export type OrderCreated = z.infer<typeof OrderCreatedSchema>;
 ### Topic-safe generic types
 
 ```ts
-export type EventTopic = keyof typeof topicToType;             // 'orders.created' | 'payments.completed'
+export type EventTopic = keyof typeof topicToType;             // 'orders.created' | 'payments.completed' | 'customers'
 export type EventOf<Topic extends EventTopic> = Extract<
   EventPayload,
   { type: (typeof topicToType)[Topic] }
@@ -333,6 +340,7 @@ await publisher.publish('orders.created', payment);     // ❌ compile error
 |---|---|---|
 | `orders.created` | `OrderCreated` | Order placed (items + totals) |
 | `payments.completed` | `PaymentCompleted` | Payment captured for an order |
+| `customers` | `CustomerUpdated` | Full-state per-customer changelog — compacted topic, key = `customerId`, latest record wins, null value = tombstone (delete) |
 | `orders.dlq` | `DlqEntry` | Failed messages (parse failure or handler exhaustion) |
 | `orders.retry` | Original payload + headers | Scheduled retries — `retry-count` + `next-deliver-at` headers, escalating delay, max 3 deliveries → DLQ. JSON codec. |
 | `telemetry.events` | `TelemetryEvent` | Per-step pipeline telemetry for the live flow tracker |
@@ -400,6 +408,7 @@ The React UI is served statically on the same origin (see `apps/web/src/ui`).
 | **Retry with exponential backoff + jitter** | `packages/infra/src/retry.ts` |
 | **Manual offset commit (at-least-once)** | `ConfluentKafkaAdapter.consume`, `handler-runner.ts` |
 | **Transactional outbox** (SQLite write + relay, `read_committed`) | `packages/infra/src/outbox.ts`, `apps/web/src/order-store.ts` |
+| **Compacted topics / customer-360** (KTable read model, tombstones) | `apps/customer-view/`, `packages/domain/src/aggregation/customer-state.ts` |
 | **Idempotent producer** (`acks=all`, `enable.idempotence`) | `ConfluentKafkaAdapter.getProducer` |
 | **Graceful shutdown** (drain + commit + exit) | `packages/infra/src/shutdown.ts` |
 | **Structured logging** (pino, JSON) | `packages/infra/src/logger.ts`, logger bridge to the Kafka client |
@@ -408,7 +417,7 @@ The React UI is served statically on the same origin (see `apps/web/src/ui`).
 | **Consumer groups / offsets** | `ConsumeOptions` (manual commit, group id, concurrency) |
 | **Multi-stage Docker builds** | `apps/*/Dockerfile` |
 | **KRaft Kafka (no ZooKeeper)** | `docker-compose.yml` |
-| **Unit + integration tests** | Vitest, 94 tests, no Kafka required |
+| **Unit + integration tests** | Vitest, 111 tests, no Kafka required |
 
 ---
 
@@ -419,6 +428,7 @@ apps/
   producer/          CLI that publishes order + payment events, then exits
   consumer/          long-running worker with parse → retry → DLQ → commit pipeline
   web/               Express REST + SSE server and React flow-tracker UI
+  customer-view/     Express read model over the compacted customers topic (tombstones)
 packages/
   broker/            IMessageBroker port + in-memory / confluent adapters
   domain/            Zod schemas, event union, sample generators, notification handler
@@ -437,17 +447,18 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 | `npm run build` | Compile all packages (topological order) |
 | `npm run typecheck` | `tsc --noEmit` across all packages |
 | `npm run lint` | ESLint (flat config + typescript-eslint) |
-| `npm test` | Vitest — 94 tests, runs without any Kafka |
+| `npm test` | Vitest — 111 tests, runs without any Kafka |
 | `npm run dev:producer -- --count N` | Produce N order+payment pairs (`--delay` also accepted, ms) |
 | `npm run dev:consumer` | Consumer worker (in-memory self-demo) |
 | `npm run dev:web` | Web UI — Express API on :3000, Vite dev UI on :5173 (needs real Kafka) |
+| `npm run dev:customer-view` | Customer read model — REST API on :3001 (in-memory self-demo) |
 | `docker compose up --build` | Full stack with Kafka UI on :8080 and web UI on :3000 |
 
 ---
 
 ## Tests
 
-Vitest, configured in `vitest.config.ts`. All 94 tests run **without Kafka** — they use the in-memory driver, `node:sqlite` `:memory:` databases, and mocks:
+Vitest, configured in `vitest.config.ts`. All 111 tests run **without Kafka** — they use the in-memory driver, `node:sqlite` `:memory:` databases, and mocks:
 
 | Suite | File | Tests |
 |---|---|---|
@@ -455,20 +466,22 @@ Vitest, configured in `vitest.config.ts`. All 94 tests run **without Kafka** —
 | Retry topic scheduler | `packages/infra/test/retry-topic.test.ts` | 6 |
 | Outbox store + relay | `packages/infra/test/outbox.test.ts` | 10 |
 | Event schemas | `packages/domain/test/schemas.test.ts` | 6 |
+| Customer changelog (aggregation) | `packages/domain/test/customer.test.ts` | 6 |
 | Avro schemas (curated) | `packages/domain/test/avro-schemas.test.ts` | 3 |
 | Avro codec (Schema Registry) | `packages/broker/test/avro.test.ts` | 7 |
 | Broker config wiring | `packages/infra/test/broker.test.ts` | 4 |
 | Telemetry schema | `packages/domain/test/telemetry.test.ts` | 4 |
-| Confluent adapter (mocked driver) | `packages/broker/test/confluent.test.ts` | 13 |
+| Confluent adapter (mocked driver) | `packages/broker/test/confluent.test.ts` | 15 |
 | Transactions | `packages/broker/test/confluent.test.ts` (transactions block) | 4 |
-| In-memory broker | `packages/broker/test/in-memory.test.ts` | 7 |
-| Codec (JSON + wiring) | `packages/broker/test/codec.test.ts` | 8 |
+| In-memory broker | `packages/broker/test/in-memory.test.ts` | 8 |
+| Codec (JSON + wiring) | `packages/broker/test/codec.test.ts` | 9 |
 | Telemetry client | `packages/infra/test/telemetry.test.ts` | 3 |
 | Publisher | `packages/infra/test/publisher.test.ts` | 2 |
 | Dead-letter queue | `packages/infra/test/dlq.test.ts` | 1 |
 | Consumer pipeline | `apps/consumer/test/pipeline.test.ts` | 3 |
 | Retry topic pipeline | `apps/consumer/test/retry-topic.test.ts` | 5 |
 | Web server | `apps/web/test/server.test.ts` | 4 |
+| Customer view (read model + HTTP) | `apps/customer-view/test/customer-view.test.ts` | 7 |
 
 CI (`.github/workflows/ci.yml`) runs `npm ci` → `build` → `typecheck` → `lint` → `test` on Node 22.
 
@@ -480,6 +493,6 @@ CI (`.github/workflows/ci.yml`) runs `npm ci` → `build` → `typecheck` → `l
 - [x] Wire producer ↔ consumer through real Kafka in Docker (`BROKER_DRIVER=confluent`)
 - [x] KRaft-mode Kafka (no ZooKeeper) via the official `apache/kafka` image
 - [x] Retry topic + scheduled retry (escalating delay, max deliveries → DLQ)
-- [ ] Kafka Streams–style aggregation / compacted topics (customer 360 view)
+- [x] Kafka Streams–style aggregation / compacted topics (customer 360 view)
 - [x] Transactional outbox (SQLite order + outbox rows in one write, transactional relay, `read_committed` consumers)
 - [x] Schema Registry + Avro serialization for schema evolution

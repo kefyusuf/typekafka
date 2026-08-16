@@ -1,26 +1,30 @@
 import { z } from 'zod';
 import { OrderCreatedSchema, type OrderCreated } from './order-created.js';
 import { PaymentCompletedSchema, type PaymentCompleted } from './payment-completed.js';
+import { CustomerUpdatedSchema, type CustomerUpdated } from './customer-updated.js';
 
 export const TOPIC_ORDER_CREATED = 'orders.created';
 export const TOPIC_PAYMENT_COMPLETED = 'payments.completed';
+export const CUSTOMER_TOPIC = 'customers';
 
 export const DLQ_TOPIC = 'orders.dlq';
 export const RETRY_TOPIC = 'orders.retry';
 
 export type { OrderCreated, OrderItem } from './order-created.js';
 export type { PaymentCompleted } from './payment-completed.js';
+export type { CustomerUpdated } from './customer-updated.js';
 
 export { TELEMETRY_TOPIC, TelemetryEventSchema } from './telemetry.js';
 export type { TelemetryEvent, TelemetryEventType } from './telemetry.js';
 
 /** Discriminated union of every event in the system (keyed by `type`). */
-export type EventPayload = OrderCreated | PaymentCompleted;
+export type EventPayload = OrderCreated | PaymentCompleted | CustomerUpdated;
 
 /** Maps each topic to the `type` discriminator of the event it carries. */
 export const topicToType = {
   [TOPIC_ORDER_CREATED]: 'order.created',
   [TOPIC_PAYMENT_COMPLETED]: 'payment.completed',
+  [CUSTOMER_TOPIC]: 'customer.updated',
 } as const;
 
 export type EventTopic = keyof typeof topicToType;
@@ -46,6 +50,7 @@ type EventSchemas = { [K in EventTopic]: z.ZodType<EventOf<K>> };
 export const eventSchemas: EventSchemas = {
   [TOPIC_ORDER_CREATED]: OrderCreatedSchema,
   [TOPIC_PAYMENT_COMPLETED]: PaymentCompletedSchema,
+  [CUSTOMER_TOPIC]: CustomerUpdatedSchema,
 };
 
 /** Strictly parse an unknown payload against the topic's schema. */

@@ -20,7 +20,8 @@
     "test:watch": "vitest",
     "dev:producer": "npm run build && npm run dev --workspace apps/producer",
     "dev:consumer": "npm run build && npm run dev --workspace apps/consumer",
-    "dev:web": "npm run build --workspace apps/web && npm run dev --workspace apps/web"
+    "dev:web": "npm run build --workspace apps/web && npm run dev --workspace apps/web",
+    "dev:customer-view": "npm run build --workspace apps/customer-view && npm run dev --workspace apps/customer-view"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
