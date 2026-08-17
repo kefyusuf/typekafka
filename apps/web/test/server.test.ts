@@ -140,7 +140,7 @@ describe('web server', () => {
     const received: unknown[] = [];
     const dispose = await s.broker.consume(
       ['orders.created'],
-      (message) => {
+      async (message) => {
         received.push(message.value);
       },
       { groupId: 'invalid-input-check' },

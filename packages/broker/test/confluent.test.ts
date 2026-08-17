@@ -46,6 +46,7 @@ function fakeProducer(overrides: Record<string, unknown> = {}) {
     send: vi
       .fn()
       .mockResolvedValue([{ topicName: 'orders.created', partition: 1, baseOffset: '42' }]),
+    transaction: vi.fn(),
     ...overrides,
   };
 }
@@ -470,7 +471,7 @@ describe('ConfluentKafkaAdapter', () => {
     let value: unknown;
     const dispose = await broker.consume(
       ['orders.created'],
-      (message) => {
+      async (message) => {
         value = message.value;
       },
       { groupId: 'g', manualCommit: true },

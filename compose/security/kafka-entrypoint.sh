@@ -1,13 +1,14 @@
 #!/bin/sh
 set -e
 
-# Generate a self-signed server certificate for the SASL_SSL listener, once per
-# volume lifetime. Uses the JRE's keytool (guaranteed present in the
-# temurin-based apache/kafka image) instead of openssl — no host scripts, and
-# nothing extra to install in the image (Windows-safe).
 KEYSTORE=/tmp/certs/keystore.p12
 CA_PEM=/tmp/certs/ca.pem
-STORE_PASSWORD=changeit
+TRUSTSTORE=/tmp/certs/truststore.p12
+KEY_CREDS=/tmp/certs/key_creds
+KS_CREDS=/tmp/certs/keystore_creds
+TRUST_CREDS=/tmp/certs/truststore_creds
+JAAS=/tmp/certs/kafka_jaas.conf
+PASS=changeit
 
 if [ ! -f "$KEYSTORE" ]; then
   keytool -genkeypair \
@@ -17,17 +18,41 @@ if [ ! -f "$KEYSTORE" ]; then
     -validity 3650 \
     -storetype PKCS12 \
     -keystore "$KEYSTORE" \
-    -storepass "$STORE_PASSWORD" \
-    -keypass "$STORE_PASSWORD" \
+    -storepass "$PASS" \
+    -keypass "$PASS" \
     -ext "SAN=DNS:kafka-secured,DNS:localhost,IP:127.0.0.1"
   keytool -exportcert \
     -alias server \
     -rfc \
     -keystore "$KEYSTORE" \
-    -storepass "$STORE_PASSWORD" \
+    -storepass "$PASS" \
     -file "$CA_PEM"
+  keytool -importcert \
+    -alias ca \
+    -file "$CA_PEM" \
+    -keystore "$TRUSTSTORE" \
+    -storetype PKCS12 \
+    -storepass "$PASS" \
+    -noprompt
+  printf '%s' "$PASS" > "$KEY_CREDS"
+  printf '%s' "$PASS" > "$KS_CREDS"
+  printf '%s' "$PASS" > "$TRUST_CREDS"
+  cat > "$JAAS" <<'EOF'
+KafkaServer {
+  org.apache.kafka.common.security.plain.PlainLoginModule required
+  username="admin"
+  password="admin-secret"
+  user_admin="admin-secret"
+  user_app="app-secret";
+};
+EOF
 fi
 
-# Hand off to the standard apache/kafka entrypoint (env -> server.properties ->
-# Kafka start). The KAFKA_SSL_KEYSTORE_* envs reference the files above.
+cp /tmp/certs/keystore.p12 /etc/kafka/secrets/
+cp /tmp/certs/truststore.p12 /etc/kafka/secrets/
+cp /tmp/certs/key_creds /etc/kafka/secrets/
+cp /tmp/certs/keystore_creds /etc/kafka/secrets/
+cp /tmp/certs/truststore_creds /etc/kafka/secrets/
+cp /tmp/certs/kafka_jaas.conf /etc/kafka/secrets/
+
 exec /etc/kafka/docker/run "$@"
