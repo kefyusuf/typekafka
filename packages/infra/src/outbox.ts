@@ -136,6 +136,14 @@ export class OutboxRelay {
   private readonly onPublished?: (
     published: { row: OutboxRow; result: ProduceResult },
   ) => void | Promise<void>;
+  /**
+   * Tracks row ids published within this process so a re-poll (the relay polls
+   * on an interval) never re-publishes a row it has already dispatched. The
+   * durable marker lives in SQLite (`markPublished`), so a fresh process only
+   * sees genuinely pending rows; this set guards the window before that marker
+   * is flushed and is also a safety net if `markPublished` itself throws.
+   */
+  private readonly publishedIds = new Set<number>();
 
   constructor(options: OutboxRelayOptions) {
     this.broker = options.broker;
@@ -148,7 +156,10 @@ export class OutboxRelay {
   }
 
   async runOnce(): Promise<number> {
-    const rows = this.store.peekPending(this.batchSize);
+    // Skip rows already dispatched in this process (see `publishedIds`).
+    const rows = this.store
+      .peekPending(this.batchSize)
+      .filter((r) => !this.publishedIds.has(r.id));
     if (rows.length === 0) return 0;
 
     let tx: MessageTransaction | undefined;
@@ -161,8 +172,14 @@ export class OutboxRelay {
           ? await tx.produce(row.topic, row.payload, { key: row.key })
           : await this.broker.produce(row.topic, row.payload, { key: row.key });
         published.push({ row, result });
+        this.publishedIds.add(row.id);
       }
 
+      // Commit the Kafka transaction first, then mark rows published in SQLite.
+      // This ordering is at-least-once: a crash between the two leaves the row
+      // pending and it is re-published on the next poll (never dropped). Making
+      // this exactly-once would require consumer-side idempotency on `eventId`,
+      // which is intentionally out of scope for the demo.
       if (tx) await tx.commit();
       this.store.markPublished(rows.map((r) => r.id));
 
