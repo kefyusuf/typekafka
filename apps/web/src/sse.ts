@@ -26,4 +26,14 @@ export class SseHub {
     const frame = `data: ${JSON.stringify(event)}\n\n`;
     for (const client of this.clients) client.write(frame);
   }
+
+  /** Tear down: stop the heartbeat and end every open client stream. */
+  close(): void {
+    if (this.heartbeat) {
+      clearInterval(this.heartbeat);
+      this.heartbeat = null;
+    }
+    for (const client of this.clients) client.end();
+    this.clients.clear();
+  }
 }

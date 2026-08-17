@@ -35,6 +35,10 @@ interface Subscription {
   options: ConsumeOptions;
   fromSequence: number;
   disposed: boolean;
+  /** Number of handler invocations currently in flight (concurrency pool). */
+  active: number;
+  /** Records waiting for a free concurrency slot. */
+  queue: StoredRecord[];
 }
 
 /** Simple murmur2-like string hash used to pick a partition (stable for tests). */
@@ -156,14 +160,14 @@ export class InMemoryBrokerAdapter implements IMessageBroker {
       options,
       fromSequence: this.nextSequence,
       disposed: false,
+      active: 0,
+      queue: [],
     };
 
     const onMessage = (record: StoredRecord) => {
       if (!subscription.topics.has(record.topic)) return;
       if (record.sequence < subscription.fromSequence) return;
-      this.dispatch(record, subscription).catch(() => {
-        /* dispatch handles its own errors */
-      });
+      this.enqueueDispatch(record, subscription);
     };
 
     this.emitter.on('message', onMessage);
@@ -174,7 +178,7 @@ export class InMemoryBrokerAdapter implements IMessageBroker {
       for (const record of this.records) {
         if (record.sequence >= subscription.fromSequence) continue;
         if (!subscription.topics.has(record.topic)) continue;
-        void this.dispatch(record, subscription);
+        this.enqueueDispatch(record, subscription);
       }
     }
 
@@ -214,9 +218,6 @@ export class InMemoryBrokerAdapter implements IMessageBroker {
     // the real Kafka driver.
     const context: ConsumeContext = {
       commit: async () => {},
-      nack: async () => {
-        // DLQ handling lives at the app layer (infra/dlq.ts).
-      },
     };
 
     try {
@@ -230,8 +231,49 @@ export class InMemoryBrokerAdapter implements IMessageBroker {
         },
         () => subscription.handler(message, context),
       );
-    } catch {
+    } catch (error) {
       // Handler errors are surfaced through the app's retry/DLQ wrapper.
+      // Log so dispatch regressions are visible instead of silently swallowed.
+      if (this.config.logger) {
+        this.config.logger.warn({ err: error }, 'in-memory dispatch failed');
+      } else {
+        console.warn('in-memory dispatch failed', error);
+      }
+    }
+  }
+
+  /**
+   * Dispatch a record respecting the subscription's `concurrency` limit.
+   * With `concurrency <= 1` dispatch is serialized; otherwise a small pool
+   * of at most `concurrency` in-flight handlers runs concurrently.
+   */
+  private enqueueDispatch(record: StoredRecord, subscription: Subscription): void {
+    const limit = subscription.options.concurrency ?? 1;
+    if (limit <= 1) {
+      void this.dispatch(record, subscription).catch(() => {
+        /* dispatch handles its own errors */
+      });
+      return;
+    }
+
+    if (subscription.active < limit) {
+      subscription.active++;
+      void this.runPooled(record, subscription);
+    } else {
+      subscription.queue.push(record);
+    }
+  }
+
+  private async runPooled(record: StoredRecord, subscription: Subscription): Promise<void> {
+    try {
+      await this.dispatch(record, subscription);
+    } finally {
+      const next = subscription.queue.shift();
+      if (next) {
+        void this.runPooled(next, subscription);
+      } else {
+        subscription.active--;
+      }
     }
   }
 }

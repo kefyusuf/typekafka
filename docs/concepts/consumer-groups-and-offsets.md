@@ -40,7 +40,7 @@ One consumer processes the messages of a given partition **serially** — that i
 
 `ConsumeOptions` (`packages/broker/src/types.ts`) exposes two knobs:
 
-- `concurrency` — declared in `ConsumeOptions` as the number of concurrent handler invocations, defaulting to `1`. Today neither adapter reads this field: the confluent adapter never forwards it to `consumer.run`, so serial processing comes from the kafka.js `eachMessage` default (`concurrency: 1`), and the in-memory driver dispatches every message fire-and-forget with no serialization at all.
+- `concurrency` — declared in `ConsumeOptions` as the number of concurrent handler invocations, defaulting to `1`. The confluent adapter forwards it as `consumer.run({ partitionsConsumedConcurrently })` (the KafkaJS facade's concurrency knob), and the in-memory driver dispatches through a small promise pool sized to `concurrency`, so values `> 1` run handlers concurrently while the default (`1`) stays strictly serial.
 - `manualCommit` — when `true`, offsets are committed only after the handler resolves; when `false`, the kafka.js auto-commit path commits periodically (`packages/broker/src/adapters/confluent.ts`).
 
 In practice: the `notification-service` consumer runs with `manualCommit: true`, committing each offset only after the `parse → retry → DLQ → commit` pipeline finishes, while the `web-telemetry` group auto-commits. Per-partition serial processing on real Kafka comes from the kafka.js `eachMessage` default, not from `ConsumeOptions.concurrency`.

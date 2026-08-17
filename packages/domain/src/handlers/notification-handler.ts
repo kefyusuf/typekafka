@@ -1,5 +1,6 @@
 import type { EventPayload } from '../events/index.js';
 import type { OrderCreated } from '../events/order-created.js';
+import { OVERSIZED_THRESHOLD_CENTS } from '../constants.js';
 
 /**
  * A domain handler receives an already-validated payload and returns void.
@@ -28,7 +29,7 @@ export const createNotificationHandler = (
     });
 
     // Simulate a transient side-effect failure that the retry pipeline handles.
-    if (order.totalCents > 100_000) {
+    if (order.totalCents > OVERSIZED_THRESHOLD_CENTS) {
       throw new Error('notification provider timed out (simulated retry)');
     }
   };

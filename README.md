@@ -305,6 +305,7 @@ All environment variables are validated **at startup** by a Zod schema (`package
 | `BROKER_SSL_CERT_PATH` | (empty) | Path to a PEM client certificate (confluent driver; only needed for mTLS) |
 | `BROKER_SSL_KEY_PATH` | (empty) | Path to the PEM private key for the client certificate (confluent driver; only needed for mTLS) |
 | `SCHEMA_REGISTRY_URL` | (empty) | Schema Registry URL; enables the Avro codec (driver must be `confluent`); empty → JSON codec |
+| `KAFKA_UI_SCHEMAREGISTRY_URL` | `http://localhost:8081` | `kafka-ui` schema-registry connection URL (observability/security profiles) |
 | `BROKER_MEMORY_AUTO_COMMIT` | `true` | In-memory driver: commit offsets automatically after handler resolve |
 | `CONSUMER_GROUP_ID` | `notification-service` | Consumer group id for both consumers |
 | `CONSUMER_FROM_BEGINNING` | `true` | Start reading from the earliest offset when no committed offset exists |
@@ -314,6 +315,7 @@ All environment variables are validated **at startup** by a Zod schema (`package
 | `TELEMETRY_GROUP_ID` | `web-telemetry` | Consumer group id for the telemetry event stream |
 | `OUTBOX_DB_PATH` | `data/outbox.db` | Web app: SQLite file for the `orders` + `outbox` tables (parent dir is created on start; compose mounts a named volume at `/data`) |
 | `CUSTOMER_VIEW_PORT` | `3001` | `customer-view` service: HTTP port for the customer read model |
+| `CUSTOMER_VIEW_GROUP_ID` | `customer-view` | `customer-view` service: consumer group id for the `customers` changelog |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | (empty) | OTel OTLP/HTTP traces endpoint (e.g. `http://otel-collector:4318/v1/traces`); empty → tracing disabled |
 | `OTEL_SERVICE_NAME` | (empty) | OTel resource `service.name` (falls back to `nodejs-kafka` when empty) |
 | `METRICS_PORT` | (empty) | Port for the app's Prometheus `/metrics` HTTP server; empty → metrics server disabled |
@@ -492,7 +494,7 @@ Vitest, configured in `vitest.config.ts`. All 140 tests across 22 files run **wi
 
 | Suite | File | Tests |
 |---|---|---|
-| Retry behaviour | `packages/infra/test/retry.test.ts` | 4 |
+| Retry behavior | `packages/infra/test/retry.test.ts` | 4 |
 | Retry topic scheduler | `packages/infra/test/retry-topic.test.ts` | 6 |
 | Outbox store + relay | `packages/infra/test/outbox.test.ts` | 10 |
 | Event schemas | `packages/domain/test/schemas.test.ts` | 6 |

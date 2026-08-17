@@ -23,6 +23,13 @@ Everything lives behind the `security` compose profile (`docker compose --profil
 
 The base stack is untouched — the primary `kafka` cluster stays plaintext and the default `docker compose up` starts nothing secured.
 
+> **Unauthenticated UIs — keep them off untrusted networks.** The observability and security compose profiles publish management UIs with **no authentication**:
+> - `kafka-ui` on **8080** (cluster/topic browsing, SASL creds in its config)
+> - `prometheus` on **9090** (metrics, target scraping config)
+> - `grafana` on **3002** (dashboards; anonymous viewing enabled via `GF_USERS_ALLOW_SIGN_UP: "false"` but no login required)
+>
+> These are demo conveniences. Do not expose them to untrusted networks; for anything beyond `localhost`, put them behind an authenticating reverse proxy or remove their `ports:` mappings.
+
 ## How it fits together
 
 ```

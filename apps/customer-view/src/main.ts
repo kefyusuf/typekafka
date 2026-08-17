@@ -20,6 +20,9 @@ import {
 import { createCustomerViewServer } from './app.js';
 import { CustomerStore } from './customer-store.js';
 
+/** Number of demo customers seeded into the compacted customer view. */
+const DEMO_CUSTOMERS = 3;
+
 async function main(): Promise<void> {
   const config = loadConfig();
   const logger = createLogger(config.logLevel);
@@ -31,7 +34,7 @@ async function main(): Promise<void> {
   });
   const metrics = createMetrics();
 
-  const port = Number(process.env.CUSTOMER_VIEW_PORT ?? '3001');
+  const port = config.customerViewPort;
 
   const broker = createBroker(
     buildBrokerConfig(config, { clientIdSuffix: '-customer-view', logger }),
@@ -65,7 +68,7 @@ async function main(): Promise<void> {
         'customer view applied changelog record',
       );
     },
-    { groupId: 'customer-view', fromBeginning: true, manualCommit: false },
+    { groupId: config.customerViewGroupId, fromBeginning: true, manualCommit: false },
   );
 
   // In-memory driver is single-process by design: the view self-generates a
@@ -96,7 +99,7 @@ async function produceDemoWorkload(
 ): Promise<void> {
   logger.info('in-memory demo mode: publishing sample customer changelog');
 
-  for (let seq = 1; seq <= 3; seq++) {
+  for (let seq = 1; seq <= DEMO_CUSTOMERS; seq++) {
     const order = createSampleOrder(seq);
     const state = applyPayment(
       applyOrder(undefined, order),

@@ -267,6 +267,8 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
     }
 
     void consumer.run({
+      partitionsConsumedConcurrently:
+        options.concurrency && options.concurrency > 1 ? options.concurrency : 1,
       eachMessage: async ({ topic, partition, message }) => {
         const kafkaMessage: KafkaMessage<T> = {
           topic,
@@ -284,9 +286,6 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
             await consumer.commitOffsets([
               { topic, partition, offset: nextOffset(message.offset) },
             ]);
-          },
-          nack: async () => {
-            /* DLQ handling lives at the app layer (infra/dlq.ts). */
           },
         };
 

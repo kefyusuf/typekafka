@@ -27,6 +27,9 @@ export const BrokerEnvSchema = z.object({
     .default('info'),
   WEB_PORT: z.coerce.number().int().positive().default(3000),
   TELEMETRY_GROUP_ID: z.string().trim().min(1).default('web-telemetry'),
+  SERVICE_NAME: z.string().trim().default('nodejs-kafka'),
+  CUSTOMER_VIEW_PORT: z.coerce.number().int().positive().default(3001),
+  CUSTOMER_VIEW_GROUP_ID: z.string().trim().min(1).default('customer-view'),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().default(''),
   OTEL_SERVICE_NAME: z.string().default(''),
   METRICS_PORT: z
@@ -53,6 +56,9 @@ export interface AppConfig {
   logLevel: BrokerEnv['LOG_LEVEL'];
   webPort: number;
   telemetryGroupId: string;
+  serviceName: string;
+  customerViewPort: number;
+  customerViewGroupId: string;
   otelEndpoint: string;
   otelServiceName: string;
   metricsPort: string;
@@ -92,6 +98,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     logLevel: e.LOG_LEVEL,
     webPort: e.WEB_PORT,
     telemetryGroupId: e.TELEMETRY_GROUP_ID,
+    serviceName: e.SERVICE_NAME,
+    customerViewPort: e.CUSTOMER_VIEW_PORT,
+    customerViewGroupId: e.CUSTOMER_VIEW_GROUP_ID,
     otelEndpoint: e.OTEL_EXPORTER_OTLP_ENDPOINT,
     otelServiceName: e.OTEL_SERVICE_NAME,
     metricsPort: e.METRICS_PORT,
