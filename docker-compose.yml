@@ -191,6 +191,14 @@ services:
       KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "false"
     ports:
       - "9095:9095"
+    # Run as root: the in-container `keytool` entrypoint must write the PKCS12
+    # keystore and CA PEM into the `security-certs` named volume, which Docker
+    # mounts root-owned. The apache/kafka image runs its default user as a
+    # non-root account, so without this override the entrypoint fails with
+    # `keytool error: ... Permission denied`. Acceptable for this single-node
+    # demo cluster (the broker binds to 127.0.0.1:9095 only via the compose
+    # network); for production use a pre-provisioned keystore + non-root user.
+    user: "0:0"
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9095 --command-config /tmp/security/admin-client.properties --list >/dev/null 2>&1"]
       interval: 10s
