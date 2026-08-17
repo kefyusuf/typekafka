@@ -1,23 +1,18 @@
-import type {
-  ConsumeContext,
-  ConsumeHandler,
-  IMessageBroker,
-} from '@nodejs-kafka/broker';
+import type { ConsumeContext, ConsumeHandler, IMessageBroker } from '@nodejs-kafka/broker';
 import type {
   AppLogger,
   RetryTopicScheduler,
   TelemetryClient,
 } from '@nodejs-kafka/infra';
-import type { Counter, Histogram } from 'prom-client';
-import { withRetry } from '@nodejs-kafka/infra';
 import { DlqManager } from '@nodejs-kafka/infra';
+import {
+  extractMessageMeta,
+  runHandlerWithRetry,
+  safeDeadLetter,
+  type ConsumerMetrics,
+} from './pipeline-shared.js';
 
-export interface ConsumerMetrics {
-  messagesConsumed: Counter<string>;
-  handlerDurationMs: Histogram<string>;
-  retriesTotal: Counter<string>;
-  dlqTotal: Counter<string>;
-}
+export type { ConsumerMetrics } from './pipeline-shared.js';
 
 export interface HandlerConfig<T> {
   /** Validates/transforms the raw payload before calling `handler`. */
@@ -58,13 +53,7 @@ export function createHandlerRunner<T>(
   const baseDelayMs = config.baseDelayMs ?? 100;
 
   return async (message, context: ConsumeContext) => {
-    const asRecord = (value: unknown): Record<string, unknown> =>
-      typeof value === 'object' && value !== null
-        ? (value as Record<string, unknown>)
-        : {};
-    const raw = asRecord(message.value);
-    const eventId = typeof raw['eventId'] === 'string' ? raw['eventId'] : 'unknown';
-    const orderId = typeof raw['orderId'] === 'string' ? raw['orderId'] : 'unknown';
+    const meta = extractMessageMeta(message);
     const telemetry = config.telemetry;
     const metrics = config.metrics;
     const groupLabel = config.groupId ?? 'consumer';
@@ -73,8 +62,8 @@ export function createHandlerRunner<T>(
       await telemetry?.emit({
         type: 'committed',
         topic: message.topic,
-        eventId,
-        orderId,
+        eventId: meta.eventId,
+        orderId: meta.orderId,
         partition: message.partition,
         offset: message.offset,
         message: 'Offset committed — message fully processed',
@@ -99,15 +88,15 @@ export function createHandlerRunner<T>(
       await telemetry?.emit({
         type: 'invalid-to-dlq',
         topic: message.topic,
-        eventId,
-        orderId,
+        eventId: meta.eventId,
+        orderId: meta.orderId,
         partition: message.partition,
         offset: message.offset,
         message: 'Payload failed schema validation — sent straight to DLQ',
         concept: 'schema-validation',
       });
       metrics?.dlqTotal.labels({ topic: message.topic }).inc();
-      await dlq.deadLetter(message, error, 0);
+      await safeDeadLetter(dlq, message, error, 0, logger);
       await context.commit();
       await emitCommitted();
       return;
@@ -118,8 +107,8 @@ export function createHandlerRunner<T>(
     await telemetry?.emit({
       type: 'consumed',
       topic: message.topic,
-      eventId,
-      orderId,
+      eventId: meta.eventId,
+      orderId: meta.orderId,
       partition: message.partition,
       offset: message.offset,
       message: `Message delivered to consumer group '${groupLabel}'`,
@@ -128,8 +117,8 @@ export function createHandlerRunner<T>(
     await telemetry?.emit({
       type: 'parsed',
       topic: message.topic,
-      eventId,
-      orderId,
+      eventId: meta.eventId,
+      orderId: meta.orderId,
       partition: message.partition,
       offset: message.offset,
       message: 'Payload validated against its Zod schema',
@@ -138,44 +127,17 @@ export function createHandlerRunner<T>(
 
     // --- 2. retry business handler ---
     try {
-      await withRetry(
-        async () => {
-          const startedAt = performance.now();
-          try {
-            return await config.handler(payload);
-          } finally {
-            metrics?.handlerDurationMs
-              .labels({ topic: message.topic })
-              .observe(performance.now() - startedAt);
-          }
-        },
-        { attempts, baseDelayMs },
-        (state, error) => {
-          metrics?.retriesTotal.labels({ topic: message.topic }).inc();
-          void telemetry?.emit({
-            type: 'retrying',
-            topic: message.topic,
-            eventId,
-            orderId,
-            partition: message.partition,
-            offset: message.offset,
-            attempt: state.attempt,
-            message: `Handler failed (attempt ${state.attempt}) — backing off`,
-            concept: 'retry',
-          });
-          logger.warn(
-            {
-              topic: message.topic,
-              partition: message.partition,
-              offset: message.offset,
-              attempt: state.attempt,
-              nextDelayMs: state.delayMs,
-              err: error,
-            },
-            'handler failed, will retry',
-          );
-        },
-      );
+      await runHandlerWithRetry({
+        message,
+        meta,
+        handler: () => config.handler(payload),
+        attempts,
+        baseDelayMs,
+        metrics,
+        telemetry,
+        logger,
+        retryLogMessage: 'handler failed, will retry',
+      });
     } catch (error) {
       // --- 3. retry topic or dead-letter after retries exhausted ---
       if (config.retryScheduler) {
@@ -191,8 +153,8 @@ export function createHandlerRunner<T>(
         await telemetry?.emit({
           type: 'retry-scheduled',
           topic: message.topic,
-          eventId,
-          orderId,
+          eventId: meta.eventId,
+          orderId: meta.orderId,
           partition: message.partition,
           offset: message.offset,
           message: 'Handler exhausted in-process retries — published to orders.retry',
@@ -215,15 +177,15 @@ export function createHandlerRunner<T>(
       await telemetry?.emit({
         type: 'dead-lettered',
         topic: message.topic,
-        eventId,
-        orderId,
+        eventId: meta.eventId,
+        orderId: meta.orderId,
         partition: message.partition,
         offset: message.offset,
         message: 'Handler exhausted retries — message sent to orders.dlq',
         concept: 'dead-letter-queue',
       });
       metrics?.dlqTotal.labels({ topic: message.topic }).inc();
-      await dlq.deadLetter(message, error, attempts);
+      await safeDeadLetter(dlq, message, error, attempts, logger);
       await context.commit();
       await emitCommitted();
       return;

@@ -56,8 +56,6 @@ export interface TopicOptions {
 export interface ConsumeContext {
   /** Explicitly acknowledge the message (manual offset commit). */
   commit: () => Promise<void>;
-  /** Called when the message could not be processed (-> DLQ). */
-  nack: () => Promise<void>;
 }
 
 export type ConsumeHandler<T> = (

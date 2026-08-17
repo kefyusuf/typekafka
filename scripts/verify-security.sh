@@ -13,7 +13,11 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
 echo "=== cleaning previous security containers ==="
-docker rm -f $(docker ps -a --filter "name=nodejs-kafka" -q) 2>/dev/null
+# Scope cleanup to the security-profile containers only (do not delete
+# unrelated nodejs-kafka containers such as the base kafka/web/consumer).
+for c in nodejs-kafka-kafka-secured nodejs-kafka-security-init nodejs-kafka-producer-secured nodejs-kafka-consumer-secured; do
+  docker rm -f "$c" 2>/dev/null || true
+done
 docker network prune -f >/dev/null 2>&1 || true
 
 echo "=== UP (security profile: producer-secured + consumer-secured pulls kafka-secured + security-init) ==="

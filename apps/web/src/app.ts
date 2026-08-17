@@ -6,6 +6,7 @@ import {
   TELEMETRY_TOPIC,
   TelemetryEventSchema,
   createSamplePayment,
+  OVERSIZED_THRESHOLD_CENTS,
   type OrderCreated,
 } from '@nodejs-kafka/domain';
 import {
@@ -38,6 +39,10 @@ export function createWebServer(options: WebServerOptions): WebServer {
   const { broker, logger, groupId, staticDir, orderStore, outboxStore, relay, registry } =
     options;
   const hub = new SseHub();
+
+  // Deterministic, process-local customer id generator (no Math.random per
+  // request). Only used when the caller does not supply a customerId.
+  let nextCustomerSeq = 1000;
 
   const app = express();
   app.use(express.json());
@@ -78,7 +83,7 @@ export function createWebServer(options: WebServerOptions): WebServer {
     const customerId =
       typeof body.customerId === 'string' && body.customerId
         ? body.customerId
-        : `CUST-${1000 + Math.floor(Math.random() * 9000)}`;
+        : `CUST-${nextCustomerSeq++}`;
 
     const order: OrderCreated = {
       type: 'order.created',
@@ -97,7 +102,7 @@ export function createWebServer(options: WebServerOptions): WebServer {
       res.status(201).json({
         orderId: order.orderId,
         totalCents: order.totalCents,
-        oversized: order.totalCents > 100_000,
+        oversized: order.totalCents > OVERSIZED_THRESHOLD_CENTS,
       });
     } catch (error) {
       logger.error({ err: error }, 'failed to persist order');
@@ -149,6 +154,7 @@ export function createWebServer(options: WebServerOptions): WebServer {
         async close() {
           if (relayDisposer) await relayDisposer().catch(() => {});
           if (consumer) await consumer();
+          hub.close();
           await new Promise<void>((r) => server.close(() => r()));
         },
       };

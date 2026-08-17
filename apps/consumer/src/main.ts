@@ -209,9 +209,9 @@ async function main(): Promise<void> {
     { logger },
   );
 
-  // Keep the worker alive. The graceful shutdown handler exits after draining.
-  setInterval(() => {}, 2 ** 31 - 1);
-  await new Promise<void>(() => {});
+  // The running consumers hold the event loop open, and `registerGracefulShutdown`
+  // keeps the process alive via its SIGINT/SIGTERM listeners (then exits after
+  // draining). No artificial keep-alive timer is needed.
 }
 
 async function produceDemoWorkload(

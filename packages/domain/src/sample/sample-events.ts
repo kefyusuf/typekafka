@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { OrderCreated } from '../events/order-created.js';
 import type { PaymentCompleted } from '../events/payment-completed.js';
+import { OVERSIZED_THRESHOLD_CENTS } from '../constants.js';
 
 const SKUS = ['TSHIRT-BLACK', 'MUG-WHITE', 'HOODIE-GREY', 'STICKER-OG'] as const;
 const PAYMENT_METHODS = ['card', 'bank_transfer', 'wallet'] as const;
@@ -11,15 +12,15 @@ const pick = <T>(values: readonly T[]): T => values[randomInt(values.length)]!;
 /**
  * Deterministic, spec-compliant order event for demos and tests.
  *
- * Every third order is deliberately oversized (> 100_000 cents) so the
- * notification handler's simulated provider timeout fires — demonstrating
- * the consumer's retry + DLQ pipeline.
+ * Every third order is deliberately oversized (its total exceeds
+ * `OVERSIZED_THRESHOLD_CENTS`) so the notification handler's simulated
+ * provider timeout fires — demonstrating the consumer's retry + DLQ pipeline.
  */
 export function createSampleOrder(seq: number): OrderCreated {
   const oversized = seq % 3 === 0;
 
   const items = oversized
-    ? [{ sku: 'TSHIRT-BLACK', quantity: 3, priceCents: 50_000 }]
+    ? [{ sku: 'TSHIRT-BLACK', quantity: 3, priceCents: OVERSIZED_THRESHOLD_CENTS }]
     : Array.from({ length: 1 + randomInt(3) }, () => ({
         sku: pick(SKUS),
         quantity: 1 + randomInt(4),
