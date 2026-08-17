@@ -191,6 +191,9 @@ services:
       KAFKA_SSL_KEYSTORE_FILENAME: keystore.p12
       KAFKA_SSL_KEY_CREDENTIALS: key_creds
       KAFKA_SSL_KEYSTORE_CREDENTIALS: keystore_creds
+      KAFKA_SSL_TRUSTSTORE_LOCATION: /etc/kafka/secrets/truststore.p12
+      KAFKA_SSL_TRUSTSTORE_TYPE: PKCS12
+      KAFKA_SSL_TRUSTSTORE_PASSWORD: changeit
       KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/secrets/kafka_jaas.conf"
       # KRaft stores ACLs in the __cluster_metadata log via the StandardAuthorizer
       # (KIP-801) — the legacy AclAuthorizer is ZooKeeper-based and NPEs in KRaft.
