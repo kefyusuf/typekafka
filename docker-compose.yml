@@ -165,6 +165,7 @@ services:
       KAFKA_LISTENERS: SASL_SSL://:9095,CONTROLLER://:9093
       KAFKA_ADVERTISED_LISTENERS: SASL_SSL://kafka-secured:9095
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,SASL_SSL:SASL_SSL
+      KAFKA_INTER_BROKER_LISTENER_NAME: SASL_SSL
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       # Each KRaft cluster must have a unique base64 UUID, so kafka-secured
       # gets its own (different from the primary's and kafka-b's CLUSTER_ID).
