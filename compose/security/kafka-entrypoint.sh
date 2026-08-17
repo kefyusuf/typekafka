@@ -38,7 +38,9 @@ KafkaServer {
 EOF
 fi
 
-rm -rf /etc/kafka/secrets
-ln -s /tmp/certs /etc/kafka/secrets
+cp /tmp/certs/keystore.p12 /etc/kafka/secrets/
+cp /tmp/certs/key_creds /etc/kafka/secrets/
+cp /tmp/certs/keystore_creds /etc/kafka/secrets/
+cp /tmp/certs/kafka_jaas.conf /etc/kafka/secrets/
 
 exec /etc/kafka/docker/run "$@"
