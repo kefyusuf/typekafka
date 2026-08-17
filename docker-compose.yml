@@ -182,6 +182,7 @@ services:
       # contain java.security.auth.login.config).
       KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
       KAFKA_LISTENER_NAME_SASL_SSL_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
       # TLS: the image's configure script reads the keystore from
       # /etc/kafka/secrets/<filename> (symlinked to /tmp/certs in the entrypoint)
       # and passwords from the credential files there. KEYSTORE_TYPE is not
