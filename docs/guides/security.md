@@ -30,7 +30,7 @@ producer-secured / consumer-secured        security-init (one-shot)
    apps (BROKER_SASL_* + BROKER_SSL_CA_PATH)   admin creds (admin-client.properties)
               │  SASL_SSL                            │  SASL_SSL (admin)
               ▼                                       ▼
-   kafka-secured:9095  ── AclAuthorizer ──►  User:app: ALL on orders.* + READ on groups
+    kafka-secured:9095  ── AclAuthorizer ──►  User:app: ALL on orders/payments/telemetry.* + customers + READ on groups
         ├── certs: keystore.p12 + ca.pem (security-certs volume)
         └── listeners: SASL_SSL://:9095 (clients) · CONTROLLER://:9093 (internal)
 ```
@@ -85,16 +85,22 @@ KAFKA_SUPER_USERS: User:admin;User:ANONYMOUS
 - `User:admin` is super, so the init job and admin tooling bypass the ACL table.
 - `User:ANONYMOUS` is also super because the **internal CONTROLLER listener is PLAINTEXT**: in KRaft the controller principal has no SASL identity, so it must be treated as a trusted super user or the cluster's own metadata operations would be denied.
 
-`security-init` (`compose/security/provision-acls.sh`) runs as `admin` and grants the `app` user exactly two ACLs:
+`security-init` (`compose/security/provision-acls.sh`) runs as `admin` and grants the `app` user a whitelist of topic ACLs:
 
 ```bash
+# one --add per business prefix + the literal customers topic, then the group grant
+for topic in orders payments telemetry; do
+  kafka-acls.sh --add --allow-principal User:app --operation All \
+    --topic "$topic" --resource-pattern-type prefixed
+done
 kafka-acls.sh --add --allow-principal User:app --operation All \
-  --topic orders --resource-pattern-type prefixed
+  --topic customers --resource-pattern-type literal
 kafka-acls.sh --add --allow-principal User:app --operation Read --group '*'
 ```
 
-- **`All` on `orders.*` (prefixed)** — the apps create their topics at startup, so **CREATE** must be allowed (it's part of `--operation All`) or topic auto-creation fails with a cluster-authorization error. The prefix also covers `orders.created`, `orders.payment.*`, `orders.retry`, and `orders.dlq`.
+- **`All` on `orders`/`payments`/`telemetry` (prefixed) + `customers` (literal)** — the apps create their topics at startup (`orders.created`, `payments.completed`, `orders.retry`, `orders.dlq`, `telemetry.events`, `customers`), so **CREATE** must be allowed (it's part of `--operation All`) or topic auto-creation fails with a `Topic creation errors` authorization error. The prefixes cover every topic the secured demo touches.
 - **`Read` on `'*'` consumer groups** — offset commits go through `__consumer_offsets`, which is governed by the **group** ACL. Without the group READ, the consumer can read messages but fails to commit offsets.
+- **Everything else is denied** — `test.deny`, `foo.bar`, or any topic outside the whitelist returns `TOPIC_AUTHORIZATION_FAILED`, because `allow.everyone.if.no.acl.found=false`.
 
 ## Node app configuration
 
@@ -121,24 +127,85 @@ This starts `kafka-secured` (which generates the certs and bootstraps KRaft), ru
 
 ## Verify
 
+The whole flow is scripted and reproducible:
+
+```bash
+scripts/verify-security.sh
+```
+
+It brings up the secured profile, waits for `kafka-secured` to be healthy and `security-init` to finish, then prints the producer/consumer logs, the `app` ACL list, and two real denials (bad password + ACL). A non-zero exit from either denial case is the expected, correct outcome.
+
+Manual spot-checks:
+
 1. **ACLs are listed** — from inside the secured broker, with the admin client:
    ```bash
    docker compose exec kafka-secured /opt/kafka/bin/kafka-acls.sh \
      --bootstrap-server localhost:9095 --command-config /tmp/security/admin-client.properties --list
    ```
-   You should see the two `User:app` entries (prefixed `orders` + group `'*'`).
-2. **The pipeline ran over SASL_SSL** — `docker compose logs producer-secured` shows `event produced` lines, and `docker compose logs -f consumer-secured` shows `consumers running` then per-message `committed` — all authenticated as `app` over TLS.
-3. **Topic access is enforced** — list topics with the admin creds (works, `admin` is super), then confirm the `app` user's view is limited to `orders.*` by the ACLs above.
+   You should see the `User:app` entries (prefixed `orders`/`payments`/`telemetry` + literal `customers` + group `'*'`).
+2. **The pipeline ran over SASL_SSL** — `docker compose logs producer-secured` shows `event produced` lines, and `docker compose logs -f consumer-secured` shows `payment recorded` / `notification: order placed` — all authenticated as `app` over TLS.
+3. **Topic access is enforced** — list topics with the admin creds (works, `admin` is super), then confirm the `app` user's view is limited to the whitelist above.
+
+### Verified run (captured output)
+
+Producer authenticates and publishes the demo events, consumer processes them over SASL_SSL with retry/DLQ:
+
+```
+producer-secured  Admin client connected                 # SASL_SSL handshake as User:app
+producer-secured  event produced  topic=orders.created   partition=1 offset=0
+producer-secured  event produced  topic=payments.completed ...
+producer-secured  event produced  topic=customers        ...
+producer-secured  producer finished, disconnecting
+
+consumer-secured  notification: order placed
+consumer-secured  payment recorded  orderId=ORD-00001 ...
+consumer-secured  retry handler failed, will retry        # simulated notification timeout -> retry
+consumer-secured  retry message parked until next-deliver-at
+```
+
+ACL table actually provisioned:
+
+```
+Current ACLs for resource `ResourcePattern(resourceType=TOPIC, name=orders,    patternType=PREFIXED)`: (principal=User:app, host=*, operation=ALL, permissionType=ALLOW)
+Current ACLs for resource `ResourcePattern(resourceType=TOPIC, name=payments,  patternType=PREFIXED)`: (principal=User:app, host=*, operation=ALL, permissionType=ALLOW)
+Current ACLs for resource `ResourcePattern(resourceType=TOPIC, name=telemetry, patternType=PREFIXED)`: (principal=User:app, host=*, operation=ALL, permissionType=ALLOW)
+Current ACLs for resource `ResourcePattern(resourceType=TOPIC, name=customers, patternType=LITERAL)`: (principal=User:app, host=*, operation=ALL, permissionType=ALLOW)
+Current ACLs for resource `ResourcePattern(resourceType=GROUP, name=*,          patternType=LITERAL)`: (principal=User:app, host=*, operation=READ, permissionType=ALLOW)
+```
+
+Two denials the broker enforces:
+
+```
+# app user, WRONG password -> SASL auth failure
+org.apache.kafka.common.errors.SaslAuthenticationException: Authentication failed: Invalid username or password
+
+# app user, correct password, but topic not in the whitelist -> ACL denial
+org.apache.kafka.common.errors.TopicAuthorizationException: Not authorized to access topics: [test.deny]
+```
 
 ## Demo the ACL denial
 
-ACLs are real — prove it by running a consumer with a wrong password:
+ACLs are real. The `app` principal authenticates fine but is restricted to its whitelist:
 
 ```bash
-docker compose run --rm -e BROKER_SASL_PASSWORD=wrong consumer-secured
+# 1) Bad credentials — SASL authentication fails before any topic is touched
+MSYS_NO_PATHCONV=1 docker compose exec kafka-secured /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9095 --topic orders.created \
+  --from-beginning --max-messages 1 --timeout-ms 15000 \
+  --consumer.config /tmp/security/admin-client.properties \
+  --consumer-property 'sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="app" password="WRONG";'
+# -> SaslAuthenticationException: Invalid username or password
+
+# 2) Valid credentials, but topic outside the whitelist — authorization fails
+MSYS_NO_PATHCONV=1 docker compose exec kafka-secured /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9095 --topic test.deny \
+  --from-beginning --max-messages 1 --timeout-ms 15000 \
+  --consumer.config /tmp/security/admin-client.properties \
+  --consumer-property 'sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="app" password="app-secret";'
+# -> TopicAuthorizationException: Not authorized to access topics: [test.deny]
 ```
 
-Expect `SASL authentication failed` / `SaslAuthenticationException` in the logs. To prove **authorization** (not just auth) is enforced, remove the grant (or run as a user with no ACL) — the client authenticates fine but hits `TOPIC_AUTHORIZATION_FAILED` on its first produce/consume. Either way the broker refuses, which is exactly what the profile is for.
+The first proves **authentication** is enforced; the second proves **authorization** (the ACL table) is the enforcement point — `allow.everyone.if.no.acl.found=false` denies everything not explicitly granted.
 
 ## Troubleshooting
 
