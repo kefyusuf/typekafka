@@ -192,9 +192,11 @@ services:
       KAFKA_SSL_KEY_CREDENTIALS: key_creds
       KAFKA_SSL_KEYSTORE_CREDENTIALS: keystore_creds
       KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/secrets/kafka_jaas.conf"
-      # AclAuthorizer with topic-scoped ACLs. ANONYMOUS is super because the
-      # internal CONTROLLER listener is PLAINTEXT (KRaft controller principal).
-      KAFKA_AUTHORIZER_CLASS_NAME: kafka.security.authorizer.AclAuthorizer
+      # KRaft stores ACLs in the __cluster_metadata log via the StandardAuthorizer
+      # (KIP-801) — the legacy AclAuthorizer is ZooKeeper-based and NPEs in KRaft.
+      # ANONYMOUS is super because the internal CONTROLLER listener is PLAINTEXT
+      # (KRaft controller principal).
+      KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
       KAFKA_SUPER_USERS: User:admin;User:ANONYMOUS
       KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "false"
     ports:
