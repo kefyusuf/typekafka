@@ -93,9 +93,8 @@ export class RetryTopicScheduler {
 
   /**
    * Publish `message` to the retry topic after `priorDeliveries` earlier
-   * retry-topic deliveries. The `error` that caused the failure is currently
-   * unused by the scheduler (diagnostics live at the runner/DLQ layer) but is
-   * accepted for symmetry with the DLQ path.
+   * retry-topic deliveries, escalating the retry count and pushing the next
+   * scheduled delivery time forward. Called when a handler fails.
    */
   async schedule(
     message: KafkaMessage<unknown>,
@@ -111,6 +110,28 @@ export class RetryTopicScheduler {
       headers: {
         [RETRY_COUNT_HEADER]: String(retryCount),
         [NEXT_DELIVER_AT_HEADER]: nextDeliverAt,
+        [RETRY_ORIGINAL_TOPIC_HEADER]: message.topic,
+      },
+    });
+  }
+
+  /**
+   * Re-publish `message` onto the retry topic WITHOUT escalating the retry
+   * count or advancing the scheduled time — used to hold a not-yet-due message
+   * until its `next-deliver-at`. The consumer commits and returns, so the
+   * partition is freed immediately (no in-handler sleep / head-of-line
+   * blocking) and the retry topic simply redelivers the message once it is due.
+   */
+  async requeue(
+    message: KafkaMessage<unknown>,
+    retryCount: number,
+    nextDeliverAtMs: number,
+  ): Promise<void> {
+    await this.broker.produce(this.topic, message.value, {
+      key: message.key ?? undefined,
+      headers: {
+        [RETRY_COUNT_HEADER]: String(retryCount),
+        [NEXT_DELIVER_AT_HEADER]: new Date(nextDeliverAtMs).toISOString(),
         [RETRY_ORIGINAL_TOPIC_HEADER]: message.topic,
       },
     });

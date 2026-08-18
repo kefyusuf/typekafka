@@ -57,13 +57,21 @@ export function createRetryTopicRunner<T>(
     const idempotency = config.idempotency;
     const groupLabel = config.groupId ?? 'consumer';
 
-    // --- 1. retry headers + parking ---
-    // A not-yet-due message is parked in place: we sleep until `next-deliver-at`
-    // and then process it. The offset is intentionally left uncommitted during
-    // the park, so a crash merely redelivers the message (at-least-once) rather
-    // than dropping a retry hop. The alternative — committing before parking and
-    // re-scheduling — risks *losing* the delivery if we crash before the
-    // re-schedule lands, so the in-place park is the safer choice.
+    // --- 1. retry headers + delayed-requeue ---
+    // A not-yet-due message is re-queued onto the retry topic (preserving its
+    // retry count and scheduled time) and the offset is committed, so the
+    // partition is freed immediately instead of being blocked by an
+    // in-handler `await sleep(parkMs)` (head-of-line blocking / rebalance
+    // stall). The retry topic redelivers the message once it is due.
+    //
+    // The wait is throttled by a bounded sleep rather than a single long one:
+    // a full `sleep(parkMs)` would block the partition for the whole backoff,
+    // while no sleep at all would busy-loop on low-latency brokers (and starve
+    // the event loop). REQUEUE_THROTTLE_MS caps each hop; across hops the
+    // cumulative wait tracks `next-deliver-at`. Bounded by maxDeliveries, so a
+    // permanently-stuck message escalates to the DLQ rather than requeueing
+    // forever.
+    const REQUEUE_THROTTLE_MS = 1_000;
     const { retryCount, nextDeliverAtMs } = scheduler.parseRetryHeaders(message.headers);
     const parkMs = scheduler.parkDelayMs(retryCount, nextDeliverAtMs);
     if (parkMs > 0) {
@@ -73,9 +81,9 @@ export function createRetryTopicRunner<T>(
           partition: message.partition,
           offset: message.offset,
           retryCount,
-          parkMs,
+          nextDeliverAtMs,
         },
-        'retry message parked until next-deliver-at',
+        'retry message not yet due — re-queuing onto retry topic',
       );
       await telemetry?.emit({
         type: 'retry-parked',
@@ -84,10 +92,13 @@ export function createRetryTopicRunner<T>(
         orderId: meta.orderId,
         partition: message.partition,
         offset: message.offset,
-        message: `Retry message parked until next-deliver-at (${parkMs}ms)`,
+        message: `Retry message not yet due — re-queued onto ${scheduler.topicName} (due in ${parkMs}ms)`,
         concept: 'retry-topic',
       });
-      await sleep(parkMs);
+      await sleep(Math.min(parkMs, REQUEUE_THROTTLE_MS));
+      await scheduler.requeue(message, retryCount, nextDeliverAtMs);
+      await context.commit();
+      return;
     }
 
     // --- 2. parse / validate ---
