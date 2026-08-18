@@ -38,6 +38,10 @@ export const BrokerEnvSchema = z.object({
       message: 'METRICS_PORT must be empty or a positive integer',
     })
     .default(''),
+  // OPTIONAL demo-only HTTP basic-auth for the app UIs and /metrics surfaces.
+  // Format "user:password" in plain text. OFF unless set. For production,
+  // source credentials from a secrets manager instead of an env var.
+  HTTP_BASIC_AUTH: z.string().optional(),
 });
 
 export type BrokerEnv = z.infer<typeof BrokerEnvSchema>;
@@ -62,6 +66,8 @@ export interface AppConfig {
   otelEndpoint: string;
   otelServiceName: string;
   metricsPort: string;
+  /** Demo-only basic-auth (`user:password`) for HTTP/metrics surfaces. Off unless set. */
+  httpBasicAuth?: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -104,5 +110,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     otelEndpoint: e.OTEL_EXPORTER_OTLP_ENDPOINT,
     otelServiceName: e.OTEL_SERVICE_NAME,
     metricsPort: e.METRICS_PORT,
+    httpBasicAuth: e.HTTP_BASIC_AUTH,
   };
 }

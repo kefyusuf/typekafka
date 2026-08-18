@@ -10,6 +10,7 @@ import {
   type OrderCreated,
 } from '@nodejs-kafka/domain';
 import {
+  createBasicAuthMiddleware,
   metricsMiddleware,
   type AppLogger,
   type AppMetrics,
@@ -28,6 +29,8 @@ export interface WebServerOptions {
   outboxStore: OutboxStore;
   relay: OutboxRelay;
   registry?: AppMetrics['registry'];
+  /** Demo-only basic-auth (`user:password`). Off unless provided. */
+  httpBasicAuth?: string;
 }
 
 export interface WebServer {
@@ -36,7 +39,7 @@ export interface WebServer {
 }
 
 export function createWebServer(options: WebServerOptions): WebServer {
-  const { broker, logger, groupId, staticDir, orderStore, outboxStore, relay, registry } =
+  const { broker, logger, groupId, staticDir, orderStore, outboxStore, relay, registry, httpBasicAuth } =
     options;
   const hub = new SseHub();
 
@@ -50,9 +53,14 @@ export function createWebServer(options: WebServerOptions): WebServer {
     app.use(express.static(staticDir));
   }
 
+  // Health probe stays open (no auth) so orchestrators can probe it.
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true });
   });
+
+  // Gate every other route with optional basic-auth. When httpBasicAuth is
+  // unset this is a no-op passthrough, so demos run unchanged.
+  app.use(createBasicAuthMiddleware(httpBasicAuth));
 
   if (registry) {
     app.get('/metrics', metricsMiddleware(registry));

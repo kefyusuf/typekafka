@@ -79,7 +79,13 @@ async function main(): Promise<void> {
     await produceDemoWorkload(broker, logger);
   }
 
-  const server = createCustomerViewServer({ broker, logger, store, registry: metrics.registry });
+  const server = createCustomerViewServer({
+    broker,
+    logger,
+    store,
+    registry: metrics.registry,
+    httpBasicAuth: config.httpBasicAuth,
+  });
   const { close } = await server.start(port);
   logger.info({ port }, 'customer view listening');
 

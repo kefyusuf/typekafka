@@ -3,6 +3,7 @@ import express from 'express';
 import type { IMessageBroker } from '@nodejs-kafka/broker';
 import { CUSTOMER_TOPIC } from '@nodejs-kafka/domain';
 import {
+  createBasicAuthMiddleware,
   metricsMiddleware,
   type AppLogger,
   type AppMetrics,
@@ -14,6 +15,8 @@ export interface CustomerViewServerOptions {
   logger: AppLogger;
   store: CustomerStore;
   registry?: AppMetrics['registry'];
+  /** Demo-only basic-auth (`user:password`). Off unless provided. */
+  httpBasicAuth?: string;
 }
 
 export interface CustomerViewServer {
@@ -24,14 +27,19 @@ export interface CustomerViewServer {
 export function createCustomerViewServer(
   options: CustomerViewServerOptions,
 ): CustomerViewServer {
-  const { broker, store, registry } = options;
+  const { broker, store, registry, httpBasicAuth } = options;
 
   const app = express();
   app.use(express.json());
 
+  // Health probe stays open (no auth) so orchestrators can probe it.
   app.get('/health', (_req, res) => {
     res.json({ ok: true });
   });
+
+  // Gate every other route with optional basic-auth. When httpBasicAuth is
+  // unset this is a no-op passthrough, so demos run unchanged.
+  app.use(createBasicAuthMiddleware(httpBasicAuth));
 
   if (registry) {
     app.get('/metrics', metricsMiddleware(registry));
