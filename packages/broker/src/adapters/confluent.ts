@@ -15,7 +15,7 @@ import type {
 import type { BrokerConfig, BrokerLogger } from '../config.js';
 import { JsonCodec, type MessageCodec } from '../codec/index.js';
 import { BrokerError, BrokerStateError } from '../errors.js';
-import { withSpan } from '../trace.js';
+import { extractParentContext, injectTraceContext, withSpan } from '../trace.js';
 
 const SECURITY_PROTOCOL_PLAIN = 'plaintext';
 const SECURITY_PROTOCOL_SASL = 'sasl_plaintext';
@@ -206,7 +206,7 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
               {
                 value: await this.codec.serialize(topic, value),
                 key: options.key ?? null,
-                headers: toKafkaHeaders(options.headers),
+                headers: toKafkaHeaders(injectTraceContext(options.headers)),
                 partition: options.partition,
               },
             ],
@@ -291,6 +291,9 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
 
         // If the handler throws (e.g. the DLQ write itself failed), the driver
         // seeks back to this offset and reprocesses it — at-least-once delivery.
+        // Continue the trace that crossed the Kafka boundary by parenting this
+        // span on the `traceparent` header injected by the producer.
+        const parentContext = extractParentContext(kafkaMessage.headers);
         await withSpan(
           'consume',
           {
@@ -300,6 +303,7 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
             offset: message.offset,
           },
           () => handler(kafkaMessage, context),
+          parentContext,
         );
       },
     });
@@ -331,7 +335,7 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
                 {
                   value: await this.codec.serialize(topic, value),
                   key: options.key ?? null,
-                  headers: toKafkaHeaders(options.headers),
+                  headers: toKafkaHeaders(injectTraceContext(options.headers)),
                   partition: options.partition,
                 },
               ],

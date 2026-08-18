@@ -15,7 +15,7 @@ import type {
 import type { BrokerConfig } from '../config.js';
 import { JsonCodec, type MessageCodec } from '../codec/index.js';
 import { BrokerError, BrokerStateError } from '../errors.js';
-import { withSpan } from '../trace.js';
+import { extractParentContext, injectTraceContext, withSpan } from '../trace.js';
 
 interface StoredRecord {
   id: string;
@@ -135,7 +135,7 @@ export class InMemoryBrokerAdapter implements IMessageBroker {
           offset: lastOffset,
           key: options.key ?? null,
           value: await this.codec.serialize(topic, value),
-          headers: options.headers,
+          headers: injectTraceContext(options.headers),
           timestamp: new Date().toISOString(),
           sequence: this.nextSequence++,
         };
@@ -221,6 +221,8 @@ export class InMemoryBrokerAdapter implements IMessageBroker {
     };
 
     try {
+      // Continue the trace that crossed the (in-memory) boundary.
+      const parentContext = extractParentContext(message.headers);
       await withSpan(
         'consume',
         {
@@ -230,6 +232,7 @@ export class InMemoryBrokerAdapter implements IMessageBroker {
           offset: message.offset,
         },
         () => subscription.handler(message, context),
+        parentContext,
       );
     } catch (error) {
       // Handler errors are surfaced through the app's retry/DLQ wrapper.
