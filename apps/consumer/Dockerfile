@@ -19,8 +19,14 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV SERVICE_NAME=consumer
 
+RUN addgroup -S appuser && adduser -S appuser -G appuser
+
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/packages ./packages
 COPY --from=build /app/apps/consumer ./apps/consumer
+
+RUN chown -R appuser:appuser /app
+
+USER appuser
 
 CMD ["node", "apps/consumer/dist/main.js"]

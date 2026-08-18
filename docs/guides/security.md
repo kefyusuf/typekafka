@@ -228,3 +228,28 @@ The first proves **authentication** is enforced; the second proves **authorizati
 - **No behavior change by default** — with the SSL paths and SASL creds empty, the driver keeps `security.protocol=plaintext` exactly as before.
 - **Confluent-driver only** — TLS/auth/ACL support lives in `ConfluentKafkaAdapter`; the in-memory driver has no network, no TLS, and no notion of principals.
 - **Not a CA or PKI** — the certs are self-signed for the demo; a real deployment swaps in your own CA and the same env vars still work.
+
+## App UIs and `/metrics` basic-auth (env-gated)
+
+The web UI, customer view, and the standalone prometheus `/metrics` endpoints ship **open by default** so demos run unchanged. To close them in anything beyond `localhost`, set a single env var:
+
+```
+HTTP_BASIC_AUTH=user:password
+```
+
+- **Apps (web, customer-view)** — `createBasicAuthMiddleware` (`packages/infra/src/http-auth.ts`) is applied to every route except the health probe (`/api/health`, `/health`), which stays open so orchestrators can keep probing without credentials. When `HTTP_BASIC_AUTH` is unset the middleware is a no-op passthrough.
+- **Standalone metrics server** — the `producer`/`consumer` prometheus exporter (`startMetricsServer`) challenges `/metrics` with the same `HTTP_BASIC_AUTH` when set.
+- **Constant-time** — credentials are compared with `crypto.timingSafeEqual` (equal-length buffers only); the password is never logged.
+- **Health probes** — `/api/health` and `/health` never require auth, so k8s/Docker healthchecks keep working under auth.
+
+The credential is plain text (`user:password`) and is **demo-only**. For production, source it from a secrets manager / injected secret rather than an `.env` file, and restrict the prometheus port to a trusted network behind an authenticating reverse proxy.
+
+The management UIs are also locked down when their env vars are set:
+
+| UI | Env | Effect |
+|---|---|---|
+| Grafana | `GRAFANA_ADMIN_PASSWORD` | Sets `GF_SECURITY_ADMIN_PASSWORD` (default `admin`) |
+| kafka-ui | `KAFKA_UI_USERNAME` / `KAFKA_UI_PASSWORD` | Configures `AUTH_TYPE=LOGIN_FORM` login |
+| web / customer-view | `HTTP_BASIC_AUTH` | `Authorization: Basic` challenge on all non-health routes |
+
+All three are OFF (open) until you provide a value — the default compose experience is unchanged.

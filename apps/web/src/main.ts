@@ -76,6 +76,7 @@ async function main(): Promise<void> {
     outboxStore,
     relay,
     registry: metrics.registry,
+    httpBasicAuth: config.httpBasicAuth,
   });
 
   const { close } = await server.start(config.webPort);

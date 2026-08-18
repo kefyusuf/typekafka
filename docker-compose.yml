@@ -28,6 +28,16 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
     ports:
       - "9092:9092"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "1G"
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
       interval: 10s
@@ -58,8 +68,22 @@ services:
       KAFKA_CLUSTERS_2_SASL_MECHANISM: PLAIN
       KAFKA_CLUSTERS_2_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="${KAFKA_ADMIN_PASSWORD:-admin-secret}";'
       KAFKA_CLUSTERS_2_SSL_TRUSTSTORE_CERTS: /certs/ca.pem
+      # Optional login-form auth for kafka-ui itself (off unless both set).
+      AUTH_TYPE: ${KAFKA_UI_AUTH_TYPE:-LOGIN_FORM}
+      AUTH_LOGIN_FORM_USERNAME: ${KAFKA_UI_USERNAME:-admin}
+      AUTH_LOGIN_FORM_PASSWORD: ${KAFKA_UI_PASSWORD:-admin}
     volumes:
       - security-certs:/certs:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "512M"
     depends_on:
       kafka:
         condition: service_healthy
@@ -76,6 +100,16 @@ services:
       SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
     ports:
       - "8081:8081"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "1G"
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8081/subjects || exit 1"]
       interval: 10s
@@ -86,7 +120,7 @@ services:
   # kafka-b is a second single-node KRaft cluster that MirrorMaker 2 copies
   # the orders.* topics into; mirror-maker runs the Confluent MM2 container,
   # whose default command loads /tmp/config/mm2.properties from the mounted
-  # volume. Both run only with: docker compose --profile mirror up.
+  # volume. Both run only with: docker compose --profile mirror up
 
   kafka-b:
     image: apache/kafka:3.7.0
@@ -118,6 +152,16 @@ services:
     ports:
       # Host 9092 is taken by the primary; 9094 exposes kafka-b for checks.
       - "9094:9092"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "1G"
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
       interval: 10s
@@ -133,6 +177,16 @@ services:
     profiles: ["mirror"]
     volumes:
       - ./compose/mirror/mm2.properties:/tmp/config/mm2.properties:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "512M"
     depends_on:
       kafka:
         condition: service_healthy
@@ -144,7 +198,7 @@ services:
   # auth + AclAuthorizer, topic-scoped ACLs). Self-signed certs are generated
   # inside the container by the entrypoint, so no host scripts are needed.
   # security-init is a one-shot job that grants the app user ACLs and gates the
-  # secured apps. All run only with: docker compose --profile security up.
+  # secured apps. All run only with: docker compose --profile security up
 
   kafka-secured:
     # SASL_SSL-secured KRaft cluster (PLAIN auth + AclAuthorizer, topic ACLs).
@@ -211,6 +265,17 @@ services:
     # runs as the non-root user, not root. For production, use a
     # pre-provisioned keystore + a non-root user and drop this override.
     user: "0:0"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /etc/kafka/secrets
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "1G"
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9095 --command-config /tmp/security/admin-client.properties --list >/dev/null 2>&1"]
       interval: 10s
@@ -228,6 +293,16 @@ services:
       - ./compose/security/provision-acls.sh:/tmp/security/provision-acls.sh:ro
       - ./compose/security/admin-client.properties:/tmp/security/admin-client.properties:ro
       - security-certs:/tmp/certs:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "256M"
     depends_on:
       kafka-secured:
         condition: service_healthy
@@ -256,6 +331,16 @@ services:
       METRICS_PORT: "9464"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
       OTEL_SERVICE_NAME: producer
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "512M"
     depends_on:
       kafka:
         condition: service_healthy
@@ -277,6 +362,16 @@ services:
       METRICS_PORT: "9465"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
       OTEL_SERVICE_NAME: consumer
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "512M"
     depends_on:
       kafka:
         condition: service_healthy
@@ -300,8 +395,25 @@ services:
       # Observability (inert without the observability profile)
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
       OTEL_SERVICE_NAME: web
+      # Demo-only basic-auth for the web UI + /metrics (off unless set).
+      HTTP_BASIC_AUTH: ${HTTP_BASIC_AUTH:-}
     volumes:
       - web-outbox:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "512M"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${WEB_PORT}/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     depends_on:
       kafka:
         condition: service_healthy
@@ -323,6 +435,23 @@ services:
       # Observability (inert without the observability profile)
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
       OTEL_SERVICE_NAME: customer-view
+      # Demo-only basic-auth for the customer view UI + /metrics (off unless set).
+      HTTP_BASIC_AUTH: ${HTTP_BASIC_AUTH:-}
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "512M"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${CUSTOMER_VIEW_PORT}/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     depends_on:
       kafka:
         condition: service_healthy
@@ -343,6 +472,16 @@ services:
       BROKER_SASL_PASSWORD: ${BROKER_SASL_APP_PASSWORD:-app-secret}
       BROKER_SSL_CA_PATH: /certs/ca.pem
       LOG_LEVEL: info
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "512M"
     depends_on:
       kafka-secured:
         condition: service_healthy
@@ -367,6 +506,16 @@ services:
       CONSUMER_GROUP_ID: notification-service
       CONSUMER_FROM_BEGINNING: "true"
       LOG_LEVEL: info
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "512M"
     depends_on:
       kafka-secured:
         condition: service_healthy
@@ -378,7 +527,7 @@ services:
   # dumps them to stdout via the debug exporter; prometheus scrapes the four
   # app metric endpoints plus the collector's own /metrics; grafana visualizes
   # them with a provisioned Prometheus datasource and the nodejs-kafka
-  # dashboard. All three run only with: docker compose --profile observability up.
+  # dashboard. All three run only with: docker compose --profile observability up
 
   otel-collector:
     # 0.111.0 pinned: known-good contrib release for the otlp receiver +
@@ -391,6 +540,16 @@ services:
     ports:
       - "4318:4318"
     profiles: ["observability"]
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "512M"
 
   prometheus:
     # v2.53.0 pinned: stable release; newer majors change CLI flags.
@@ -399,9 +558,20 @@ services:
     command: --config.file=/etc/prometheus/prometheus.yml
     volumes:
       - ./compose/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
     ports:
       - "9090:9090"
     profiles: ["observability"]
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "1G"
 
   grafana:
     # 11.1.0 pinned: supports dashboard schemaVersion 39 used here.
@@ -412,11 +582,24 @@ services:
     volumes:
       - ./compose/observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./compose/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
     environment:
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
     profiles: ["observability"]
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: "512M"
 
 volumes:
   web-outbox:
   security-certs:
-
+  prometheus-data:
+  grafana-data:

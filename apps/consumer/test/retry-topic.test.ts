@@ -85,7 +85,7 @@ function retryMessage(overrides?: Partial<KafkaMessage>): KafkaMessage<unknown> 
   };
 }
 
-describe('consumer retry topic pipeline (park -> parse -> retry -> schedule/DLQ -> commit)', () => {
+describe('consumer retry topic pipeline (delayed-requeue -> parse -> retry -> schedule/DLQ -> commit)', () => {
   it('processes a due retry message', async () => {
     const { broker, dlq, scheduler } = await createRetryHarness();
 
@@ -123,10 +123,11 @@ describe('consumer retry topic pipeline (park -> parse -> retry -> schedule/DLQ 
     await broker.disconnect();
   });
 
-  it('parks a not-yet-due retry message until next-deliver-at', async () => {
+  it('re-queues a not-yet-due retry message and processes it once due', async () => {
     const { broker, dlq, scheduler } = await createRetryHarness();
 
     const handled: string[] = [];
+    const requeued: KafkaMessage[] = [];
 
     const runner = createRetryTopicRunner(
       scheduler,
@@ -142,19 +143,31 @@ describe('consumer retry topic pipeline (park -> parse -> retry -> schedule/DLQ 
       noopLogger,
     );
     await broker.consume([RETRY_TOPIC], runner, { manualCommit: true });
-
-    const msg = retryMessage({
-      headers: {
-        'retry-count': '1',
-        'next-deliver-at': new Date(Date.now() + 25).toISOString(),
+    // A second group observes the re-queued copies (the runner commits and the
+    // partition is freed instead of being blocked by an in-handler sleep).
+    await broker.consume(
+      [RETRY_TOPIC],
+      (message, ctx) => {
+        requeued.push(message);
+        return ctx.commit();
       },
+      { fromBeginning: false },
+    );
+
+    const dueAt = new Date(Date.now() + 80).toISOString();
+    const msg = retryMessage({
+      headers: { 'retry-count': '1', 'next-deliver-at': dueAt },
     });
     await broker.produce(RETRY_TOPIC, msg.value, { key: msg.key, headers: msg.headers });
-    await sleep(15);
-
-    expect(handled).toEqual([]);
-
     await sleep(40);
+
+    // Not processed before its scheduled time, and it has already been
+    // re-queued (throttled) rather than holding the partition with a long sleep.
+    expect(handled).toEqual([]);
+    expect(requeued.length).toBeGreaterThan(0);
+    expect(requeued.some((m) => m.headers?.['retry-count'] === '1')).toBe(true);
+
+    await sleep(120);
     expect(handled).toEqual(['ORD-00001']);
 
     await broker.disconnect();

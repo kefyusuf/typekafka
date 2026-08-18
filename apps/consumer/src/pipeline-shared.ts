@@ -8,6 +8,7 @@ export interface ConsumerMetrics {
   handlerDurationMs: Histogram<string>;
   retriesTotal: Counter<string>;
   dlqTotal: Counter<string>;
+  idempotencySkipped: Counter<string>;
 }
 
 export interface MessageMeta {

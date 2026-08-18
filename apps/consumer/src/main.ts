@@ -16,6 +16,7 @@ import {
   createMetrics,
   createRetryTopicScheduler,
   createTelemetryClient,
+  createIdempotencyFilter,
   initTracing,
   loadConfig,
   registerGracefulShutdown,
@@ -44,9 +45,14 @@ async function main(): Promise<void> {
     logger,
   });
   const metrics = createMetrics();
+  const idempotency = createIdempotencyFilter();
   let metricsServer: Awaited<ReturnType<typeof startMetricsServer>> | undefined;
   if (config.metricsPort) {
-    metricsServer = await startMetricsServer(Number(config.metricsPort), metrics.registry);
+    metricsServer = await startMetricsServer(
+      Number(config.metricsPort),
+      metrics.registry,
+      config.httpBasicAuth,
+    );
     logger.info({ port: metricsServer.port }, 'prometheus metrics server started');
   }
 
@@ -96,6 +102,7 @@ async function main(): Promise<void> {
       telemetry,
       metrics,
       groupId: config.consumerGroupId,
+      idempotency,
       ...(retryScheduler ? { retryScheduler } : {}),
     },
     logger,
@@ -161,6 +168,7 @@ async function main(): Promise<void> {
             telemetry,
             metrics,
             groupId: config.consumerGroupId,
+            idempotency,
           },
           logger,
         ),

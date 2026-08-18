@@ -9,4 +9,6 @@ export * from './shutdown.js';
 export * from './publisher.js';
 export * from './telemetry.js';
 export * from './metrics.js';
+export * from './http-auth.js';
+export * from './idempotency.js';
 export * from './tracing.js';

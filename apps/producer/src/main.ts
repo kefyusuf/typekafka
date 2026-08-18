@@ -36,7 +36,11 @@ async function main(): Promise<void> {
   const metrics = createMetrics();
   let metricsServer: Awaited<ReturnType<typeof startMetricsServer>> | undefined;
   if (config.metricsPort) {
-    metricsServer = await startMetricsServer(Number(config.metricsPort), metrics.registry);
+    metricsServer = await startMetricsServer(
+      Number(config.metricsPort),
+      metrics.registry,
+      config.httpBasicAuth,
+    );
     logger.info({ port: metricsServer.port }, 'prometheus metrics server started');
   }
 

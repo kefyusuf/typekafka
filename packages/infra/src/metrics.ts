@@ -1,6 +1,7 @@
 import type { RequestHandler } from 'express';
 import { createServer } from 'node:http';
 import { Counter, Histogram, Registry } from 'prom-client';
+import { validateBasicCredentials } from './http-auth.js';
 
 const LABEL_NAMES = ['topic'] as const;
 const HANDLER_DURATION_BUCKETS = [1, 5, 10, 25, 50, 100, 250, 500, 1000];
@@ -12,6 +13,7 @@ export interface AppMetrics {
   handlerDurationMs: Histogram<string>;
   retriesTotal: Counter<string>;
   dlqTotal: Counter<string>;
+  idempotencySkipped: Counter<string>;
   outboxPublishedTotal: Counter<string>;
 }
 
@@ -46,6 +48,10 @@ export function createMetrics(): AppMetrics {
       'nodejs_kafka_dlq_total',
       'Total number of messages dead-lettered',
     ),
+    idempotencySkipped: counter(
+      'nodejs_kafka_idempotency_skipped_total',
+      'Total number of duplicate event ids skipped by the idempotency filter',
+    ),
     outboxPublishedTotal: counter(
       'nodejs_kafka_outbox_published_total',
       'Total number of outbox events published',
@@ -56,6 +62,7 @@ export function createMetrics(): AppMetrics {
 export async function startMetricsServer(
   port: number,
   registry: Registry,
+  credentials?: string,
 ): Promise<{ port: number; close(): Promise<void> }> {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
@@ -63,6 +70,14 @@ export async function startMetricsServer(
       res.statusCode = 404;
       res.setHeader('Content-Type', 'text/plain');
       res.end('Not Found');
+      return;
+    }
+
+    if (credentials && !validateBasicCredentials(req.headers['authorization'], credentials)) {
+      res.statusCode = 401;
+      res.setHeader('WWW-Authenticate', 'Basic realm="nodejs-kafka"');
+      res.setHeader('Content-Type', 'text/plain');
+      res.end('Unauthorized');
       return;
     }
 
