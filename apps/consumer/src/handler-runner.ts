@@ -1,6 +1,7 @@
 import type { ConsumeContext, ConsumeHandler, IMessageBroker } from '@nodejs-kafka/broker';
 import type {
   AppLogger,
+  IdempotencyFilter,
   RetryTopicScheduler,
   TelemetryClient,
 } from '@nodejs-kafka/infra';
@@ -33,6 +34,8 @@ export interface HandlerConfig<T> {
   retryScheduler?: RetryTopicScheduler;
   /** Optional prometheus metrics; skipped when not provided. */
   metrics?: ConsumerMetrics;
+  /** Optional idempotency filter; skips already-processed event ids. */
+  idempotency?: IdempotencyFilter;
 }
 
 /**
@@ -56,6 +59,7 @@ export function createHandlerRunner<T>(
     const meta = extractMessageMeta(message);
     const telemetry = config.telemetry;
     const metrics = config.metrics;
+    const idempotency = config.idempotency;
     const groupLabel = config.groupId ?? 'consumer';
 
     const emitCommitted = async (): Promise<void> => {
@@ -97,6 +101,30 @@ export function createHandlerRunner<T>(
       });
       metrics?.dlqTotal.labels({ topic: message.topic }).inc();
       await safeDeadLetter(dlq, message, error, 0, logger);
+      await context.commit();
+      await emitCommitted();
+      return;
+    }
+
+    // --- idempotency guard (at-least-once safety) ---
+    // Only already-completed event ids are skipped; a transient retry has not
+    // been marked yet, so genuine retries are never suppressed.
+    if (meta.eventId !== 'unknown' && idempotency?.isDuplicate(meta.eventId)) {
+      logger.debug(
+        { topic: message.topic, partition: message.partition, offset: message.offset, eventId: meta.eventId },
+        'duplicate eventId already processed, skipping',
+      );
+      await telemetry?.emit({
+        type: 'duplicate-skipped',
+        topic: message.topic,
+        eventId: meta.eventId,
+        orderId: meta.orderId,
+        partition: message.partition,
+        offset: message.offset,
+        message: 'Duplicate eventId already processed — skipped (idempotency)',
+        concept: 'idempotency',
+      });
+      metrics?.idempotencySkipped.labels({ topic: message.topic }).inc();
       await context.commit();
       await emitCommitted();
       return;
@@ -192,6 +220,9 @@ export function createHandlerRunner<T>(
     }
 
     // --- 4. commit on success ---
+    // Mark only after successful processing so genuine in-flight retries
+    // (which have not completed) are never suppressed by the idempotency guard.
+    if (meta.eventId !== 'unknown') idempotency?.mark(meta.eventId);
     await context.commit();
     await emitCommitted();
   };

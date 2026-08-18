@@ -16,6 +16,7 @@ const TYPE_COLORS: Record<TelemetryEventType, string> = {
   committed: '#009688',
   'payment-recorded': '#3f51b5',
   'invalid-to-dlq': '#e91e63',
+  'duplicate-skipped': '#607d8b',
 };
 
 const CONCEPT_EXPLANATION: Record<string, string> = {

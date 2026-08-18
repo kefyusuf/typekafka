@@ -13,6 +13,7 @@ export const TelemetryEventTypeSchema = z.enum([
   'committed',
   'payment-recorded',
   'invalid-to-dlq',
+  'duplicate-skipped',
 ]);
 
 export type TelemetryEventType = z.infer<typeof TelemetryEventTypeSchema>;

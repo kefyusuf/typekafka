@@ -13,6 +13,7 @@ export interface AppMetrics {
   handlerDurationMs: Histogram<string>;
   retriesTotal: Counter<string>;
   dlqTotal: Counter<string>;
+  idempotencySkipped: Counter<string>;
   outboxPublishedTotal: Counter<string>;
 }
 
@@ -46,6 +47,10 @@ export function createMetrics(): AppMetrics {
     dlqTotal: counter(
       'nodejs_kafka_dlq_total',
       'Total number of messages dead-lettered',
+    ),
+    idempotencySkipped: counter(
+      'nodejs_kafka_idempotency_skipped_total',
+      'Total number of duplicate event ids skipped by the idempotency filter',
     ),
     outboxPublishedTotal: counter(
       'nodejs_kafka_outbox_published_total',
