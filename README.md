@@ -1,5 +1,9 @@
 # nodejs-kafka
 
+[![CI](https://github.com/kefyusuf/nodejs-kafka-reference/actions/workflows/ci.yml/badge.svg)](https://github.com/kefyusuf/nodejs-kafka-reference/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node](https://img.shields.io/badge/node-%3E%3D%2022-brightgreen)](https://nodejs.org)
+
 Type-safe **Kafka messaging on Node.js** — built with **TypeScript**, **Zod**, and a plug-and-play **Ports & Adapters** architecture.
 
 This repo is a portfolio / reference project showing production-grade, event-driven engineering in TypeScript + Node.js + Kafka — not just a "produce a message" snippet. It covers:
@@ -449,7 +453,7 @@ The React UI is served statically on the same origin (see `apps/web/src/ui`).
 | **Consumer groups / offsets** | `ConsumeOptions` (manual commit, group id, concurrency) |
 | **Multi-stage Docker builds** | `apps/*/Dockerfile` |
 | **KRaft Kafka (no ZooKeeper)** | `docker-compose.yml` |
-| **Unit + integration tests** | Vitest, 140 tests, no Kafka required |
+| **Unit + integration tests** | Vitest, 154 tests, no Kafka required (real-Kafka integration suite is Docker-gated) |
 
 ---
 
@@ -490,7 +494,7 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 
 ## Tests
 
-Vitest, configured in `vitest.config.ts`. All 140 tests across 22 files run **without Kafka** — they use the in-memory driver, `node:sqlite` `:memory:` databases, and mocks:
+Vitest, configured in `vitest.config.ts`. The 154 unit tests across 26 files run **without Kafka** — they use the in-memory driver, `node:sqlite` `:memory:` databases, and mocks. A separate Docker-gated integration suite (`apps/consumer/test/integration`, run via `npm run test:integration`) exercises the full pipeline against a real Kafka container when Docker is available:
 
 | Suite | File | Tests |
 |---|---|---|

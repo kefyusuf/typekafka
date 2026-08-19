@@ -4,15 +4,20 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
 
 jobs:
-  build-lint-test:
+  build-and-test:
+    name: Lint · Typecheck · Test
     runs-on: ubuntu-latest
-
+    # GitHub-hosted runners ship with Docker, so the Testcontainers-based
+    # real-Kafka integration suite runs here too; it skips gracefully if not.
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
@@ -20,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build packages
+      - name: Build
         run: npm run build
 
       - name: Typecheck
@@ -29,16 +34,18 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Test
+      - name: Test (unit + integration)
         run: npm test
 
   compose-config:
+    name: Validate compose files
     runs-on: ubuntu-latest
     strategy:
       matrix:
         profile: [base, schema-registry, observability, mirror, security]
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Validate compose file
         run: |
