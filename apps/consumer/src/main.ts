@@ -9,6 +9,7 @@ import {
   createSampleOrder,
   createSamplePayment,
   parseEvent,
+  type PaymentCompleted,
 } from '@nodejs-kafka/domain';
 import {
   buildBrokerConfig,
@@ -108,6 +109,48 @@ async function main(): Promise<void> {
     logger,
   );
 
+  // `payments.completed` runs through the same parse -> retry -> DLQ -> commit
+  // pipeline as `orders.created`, so a failing payment (e.g. a telemetry emit
+  // error) is retried and, if it keeps failing, dead-lettered instead of
+  // wedging its partition with infinite redelivery. The inline handler only
+  // logs and emits the `payment-recorded` telemetry event.
+  const paymentRunner = createHandlerRunner(
+    broker,
+    dlq,
+    {
+      parse: (value) => parseEvent('payments.completed', value),
+      handler: async (payment: PaymentCompleted) => {
+        logger.info(
+          {
+            eventId: payment.eventId,
+            orderId: payment.orderId,
+            amountCents: payment.amountCents,
+            method: payment.method,
+          },
+          'payment recorded',
+        );
+        await telemetry.emit({
+          type: 'payment-recorded',
+          topic: TOPIC_PAYMENT_COMPLETED,
+          eventId: payment.eventId,
+          orderId: payment.orderId,
+          partition: -1,
+          offset: '0',
+          message: `Payment ${payment.amountCents} cents (${payment.method}) recorded`,
+          concept: 'consumer-group',
+        });
+      },
+      attempts: config.driver === 'confluent' ? 2 : 3,
+      baseDelayMs: 50,
+      telemetry,
+      metrics,
+      groupId: config.consumerGroupId,
+      idempotency,
+      ...(retryScheduler ? { retryScheduler } : {}),
+    },
+    logger,
+  );
+
   const disposers: Disposer[] = [
     await broker.consume(
       [TOPIC_ORDER_CREATED],
@@ -120,29 +163,7 @@ async function main(): Promise<void> {
     ),
     await broker.consume(
       [TOPIC_PAYMENT_COMPLETED],
-      async (message, context) => {
-        const payment = parseEvent('payments.completed', message.value);
-        logger.info(
-          {
-            eventId: payment.eventId,
-            orderId: payment.orderId,
-            amountCents: payment.amountCents,
-            method: payment.method,
-          },
-          'payment recorded',
-        );
-        await telemetry.emit({
-          type: 'payment-recorded',
-          topic: message.topic,
-          eventId: payment.eventId,
-          orderId: payment.orderId,
-          partition: message.partition,
-          offset: message.offset,
-          message: `Payment ${payment.amountCents} cents (${payment.method}) recorded`,
-          concept: 'consumer-group',
-        });
-        await context.commit();
-      },
+      paymentRunner,
       {
         groupId: config.consumerGroupId,
         fromBeginning: config.consumerFromBeginning,

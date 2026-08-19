@@ -17,7 +17,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:integration": "vitest run apps/consumer/test/integration",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:watch": "vitest",
     "dev:producer": "npm run build && npm run dev --workspace apps/producer",
     "dev:consumer": "npm run build && npm run dev --workspace apps/consumer",

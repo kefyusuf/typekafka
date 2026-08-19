@@ -476,7 +476,7 @@ The React UI is served statically on the same origin (see `apps/web/src/ui`).
 | **Consumer groups / offsets** | `ConsumeOptions` (manual commit, group id, concurrency) |
 | **Multi-stage Docker builds** | `apps/*/Dockerfile` |
 | **KRaft Kafka (no ZooKeeper)** | `docker-compose.yml` |
-| **Unit + integration tests** | Vitest, 154 tests, no Kafka required (real-Kafka integration suite is Docker-gated) |
+| **Unit + integration tests** | Vitest — 151 unit tests (no Docker) + 3 Docker-gated integration tests |
 
 ---
 
@@ -506,7 +506,8 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 | `npm run build` | Compile all packages (topological order) |
 | `npm run typecheck` | `tsc --noEmit` across all packages |
 | `npm run lint` | ESLint (flat config + typescript-eslint) |
-| `npm test` | Vitest — 140 tests, runs without any Kafka |
+| `npm test` | Vitest — 151 unit tests, no Docker required |
+| `npm run test:integration` | Vitest — 3 Docker-gated real-Kafka tests (needs Docker for Testcontainers) |
 | `npm run dev:producer -- --count N` | Produce N order+payment pairs (`--delay` also accepted, ms) |
 | `npm run dev:consumer` | Consumer worker (in-memory self-demo) |
 | `npm run dev:web` | Web UI — Express API on :3000, Vite dev UI on :5173 (needs real Kafka) |
@@ -517,7 +518,7 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 
 ## Tests
 
-Vitest, configured in `vitest.config.ts`. The 154 unit tests across 26 files run **without Kafka** — they use the in-memory driver, `node:sqlite` `:memory:` databases, and mocks. A separate Docker-gated integration suite (`apps/consumer/test/integration`, run via `npm run test:integration`) exercises the full pipeline against a real Kafka container when Docker is available:
+Vitest. The default `npm test` runs **151 unit tests with no Docker** — they use the in-memory driver, `node:sqlite` `:memory:` databases, and mocks. A separate Docker-gated integration suite (3 tests in `apps/consumer/test/integration`, run via `npm run test:integration`) exercises the full pipeline against a real Kafka container when Docker is available:
 
 | Suite | File | Tests |
 |---|---|---|
