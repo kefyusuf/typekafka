@@ -71,10 +71,14 @@ services:
       KAFKA_CLUSTERS_2_SASL_MECHANISM: PLAIN
       KAFKA_CLUSTERS_2_SASL_JAAS_CONFIG: 'org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="${KAFKA_ADMIN_PASSWORD:-admin-secret}";'
       KAFKA_CLUSTERS_2_SSL_TRUSTSTORE_CERTS: /certs/ca.pem
-      # Optional login-form auth for kafka-ui itself (off unless both set).
-      AUTH_TYPE: ${KAFKA_UI_AUTH_TYPE:-LOGIN_FORM}
-      AUTH_LOGIN_FORM_USERNAME: ${KAFKA_UI_USERNAME:-admin}
-      AUTH_LOGIN_FORM_PASSWORD: ${KAFKA_UI_PASSWORD:-admin}
+      # kafka-ui is open by default (no login). The built-in login-form auth is
+      # opt-in: uncomment the three lines below AND set KAFKA_UI_AUTH_TYPE=LOGIN_FORM
+      # in .env (default creds admin/admin) to enable it. Note: the provectuslabs
+      # kafka-ui login form does not persist a session in this image, so leaving it
+      # open is the reliable choice for local/manual testing.
+      # AUTH_TYPE: ${KAFKA_UI_AUTH_TYPE:-LOGIN_FORM}
+      # AUTH_LOGIN_FORM_USERNAME: ${KAFKA_UI_USERNAME:-admin}
+      # AUTH_LOGIN_FORM_PASSWORD: ${KAFKA_UI_PASSWORD:-admin}
     volumes:
       - security-certs:/certs:ro
     read_only: true
