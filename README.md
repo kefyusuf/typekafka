@@ -247,6 +247,7 @@ This is the recommended way to run the project: it starts Kafka, all app service
 5. **Trigger retry → DLQ** — place an order with **total above 100000 cents**; the log shows `retrying` → `dead-lettered`, and the message lands in `orders.dlq` (visible in Kafka UI).
 6. **Clean up / reset** — `docker compose down` stops everything and wipes Kafka state; `docker compose up --build` starts a fresh run.
 7. **Exercise the read model** — `curl http://localhost:3001/customers` lists the aggregated customers; `curl http://localhost:3001/customers/CUST-1003` shows one customer; `curl -X DELETE http://localhost:3001/customers/CUST-1003` tombstones it (subsequent GET returns 404, and the record appears in Kafka UI's `customers` topic).
+8. **Watch web orders land in customer-360** — place an order from the UI form (or `curl -X POST http://localhost:3000/api/orders -H 'Content-Type: application/json' -d '{"sku":"TSHIRT-BLACK","quantity":2,"unitPriceCents":500,"customerId":"CUST-DEMO"}'`). The web aggregates that order into the per-customer state and publishes a `customer.updated` event to the compacted `customers` topic, so `curl http://localhost:3001/customers/CUST-DEMO` now shows it with `orderCount` and `totalSpentCents` accumulated across every order you place for that customer — no need to run the sample `producer`.
 
 ### Alternative — in-memory driver (no Docker)
 
