@@ -28,7 +28,10 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
     ports:
       - "9092:9092"
-    read_only: true
+    # NOTE: `read_only` is intentionally omitted here. The apache/kafka
+    # entrypoint regenerates /opt/kafka/config at startup, which requires a
+    # writable root filesystem; the other hardening (cap_drop, no-new-privileges,
+    # resource limits) still applies. Logs live in /tmp (tmpfs, ephemeral).
     tmpfs:
       - /tmp
     cap_drop: ["ALL"]
@@ -397,10 +400,13 @@ services:
       OTEL_SERVICE_NAME: web
       # Demo-only basic-auth for the web UI + /metrics (off unless set).
       HTTP_BASIC_AUTH: ${HTTP_BASIC_AUTH:-}
-    volumes:
-      - web-outbox:/data
+    # The app runs as a non-root user, so a root-owned named volume would not
+    # be writable for the SQLite outbox. A tmpfs at /data is world-writable
+    # (1777) and works under the non-root user; the outbox DB is therefore
+    # ephemeral (reset on container restart) — fine for the demo.
     read_only: true
     tmpfs:
+      - /data
       - /tmp
     cap_drop: ["ALL"]
     security_opt: ["no-new-privileges:true"]
@@ -599,7 +605,6 @@ services:
           memory: "512M"
 
 volumes:
-  web-outbox:
   security-certs:
   prometheus-data:
   grafana-data:
