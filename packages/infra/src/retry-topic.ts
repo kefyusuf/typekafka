@@ -85,6 +85,11 @@ export class RetryTopicScheduler {
     return Math.max(0, nextDeliverAtMs - (nowMs ?? Date.now()));
   }
 
+  /** Read the original source topic a retry message was parked from. */
+  parseOriginalTopic(headers?: Record<string, string | string[]>): string | undefined {
+    return pickHeader(headers, RETRY_ORIGINAL_TOPIC_HEADER);
+  }
+
   async ensureTopic(): Promise<void> {
     await this.broker.createTopics([
       { name: this.topic, numPartitions: 3, replicationFactor: 1 },

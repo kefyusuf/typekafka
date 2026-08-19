@@ -1,4 +1,5 @@
 import type { ConsumeContext, ConsumeHandler } from '@nodejs-kafka/broker';
+import { TOPIC_ORDER_CREATED } from '@nodejs-kafka/domain';
 import type {
   AppLogger,
   DlqManager,
@@ -15,8 +16,13 @@ import {
 } from './pipeline-shared.js';
 
 export interface RetryHandlerConfig<T> {
-  /** Validates/transforms the raw payload before calling `handler`. */
-  parse: (value: unknown) => T;
+  /**
+   * Validates/transforms the raw payload before calling `handler`. Receives
+   * the original source topic (from the `retry.original-topic` header) so the
+   * runner can parse a parked message with the schema of the topic it was
+   * first published to — not a hard-coded one.
+   */
+  parse: (value: unknown, originalTopic: string) => T;
   /** Business handler, receives the validated payload. */
   handler: (payload: T) => Promise<void>;
   /** In-process retry attempts per retry-topic delivery. Defaults to 2. */
@@ -56,6 +62,10 @@ export function createRetryTopicRunner<T>(
     const metrics = config.metrics;
     const idempotency = config.idempotency;
     const groupLabel = config.groupId ?? 'consumer';
+    // The topic the message was first published to (carried on the
+    // `retry.original-topic` header). Used to parse the parked payload with the
+    // correct schema instead of assuming a single source topic.
+    const originalTopic = scheduler.parseOriginalTopic(message.headers) ?? TOPIC_ORDER_CREATED;
 
     // --- 1. retry headers + delayed-requeue ---
     // A not-yet-due message is re-queued onto the retry topic (preserving its
@@ -104,7 +114,7 @@ export function createRetryTopicRunner<T>(
     // --- 2. parse / validate ---
     let payload: T;
     try {
-      payload = config.parse(message.value);
+      payload = config.parse(message.value, originalTopic);
     } catch (error) {
       logger.warn(
         {

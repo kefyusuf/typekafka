@@ -4,9 +4,12 @@ import {
   DLQ_TOPIC,
   RETRY_TOPIC,
   TOPIC_ORDER_CREATED,
+  TOPIC_PAYMENT_COMPLETED,
   createSampleOrder,
+  createSamplePayment,
   parseEvent,
   type OrderCreated,
+  type PaymentCompleted,
 } from '@nodejs-kafka/domain';
 import {
   createMetrics,
@@ -282,6 +285,62 @@ describe('consumer retry topic pipeline (delayed-requeue -> parse -> retry -> sc
     expect(await counterValue(metrics.dlqTotal, RETRY_TOPIC)).toBe(1);
     // The handler is invoked once per attempt (2).
     expect(await handlerObservations(metrics.handlerDurationMs, RETRY_TOPIC)).toBe(2);
+
+    await broker.disconnect();
+  });
+
+  it('routes a parked payment to the payment handler via original-topic', async () => {
+    const { broker, dlq, scheduler } = await createRetryHarness();
+
+    const paymentsHandled: string[] = [];
+    const ordersHandled: string[] = [];
+    const deadLettered: KafkaMessage[] = [];
+
+    // Topic-aware parse + handler, mirroring the wiring in apps/consumer.
+    const runner = createRetryTopicRunner<OrderCreated | PaymentCompleted>(
+      scheduler,
+      dlq,
+      {
+        parse: (value, originalTopic) =>
+          originalTopic === TOPIC_PAYMENT_COMPLETED
+            ? parseEvent('payments.completed', value)
+            : parseEvent('orders.created', value),
+        handler: async (payload) => {
+          if (payload.type === 'payment.completed') {
+            paymentsHandled.push(payload.orderId);
+            return;
+          }
+          ordersHandled.push(payload.orderId);
+        },
+        attempts: 2,
+        baseDelayMs: 1,
+      },
+      noopLogger,
+    );
+    await broker.consume([RETRY_TOPIC], runner, { manualCommit: true });
+    await broker.consume([DLQ_TOPIC], (message, ctx) => {
+      deadLettered.push(message);
+      return ctx.commit();
+    });
+
+    const samplePayment = createSamplePayment(createSampleOrder(2));
+    const msg = retryMessage({
+      key: samplePayment.orderId,
+      value: samplePayment,
+      headers: {
+        'retry-count': '1',
+        'next-deliver-at': new Date(Date.now() - 5).toISOString(),
+        'retry.original-topic': TOPIC_PAYMENT_COMPLETED,
+      },
+    });
+    await broker.produce(RETRY_TOPIC, msg.value, { key: msg.key, headers: msg.headers });
+    await sleep(30);
+
+    // The parked payment is parsed as a payment and handled as one — not
+    // mis-parsed as an order (which would have landed it in the DLQ).
+    expect(paymentsHandled).toEqual([samplePayment.orderId]);
+    expect(ordersHandled).toEqual([]);
+    expect(deadLettered).toHaveLength(0);
 
     await broker.disconnect();
   });
