@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { createBroker } from '@nodejs-kafka/broker';
 import {
+  CUSTOMER_TOPIC,
   TELEMETRY_TOPIC,
   TOPIC_ORDER_CREATED,
   TOPIC_PAYMENT_COMPLETED,
@@ -49,6 +50,7 @@ async function main(): Promise<void> {
     { name: TOPIC_ORDER_CREATED, numPartitions: 3 },
     { name: TOPIC_PAYMENT_COMPLETED, numPartitions: 3 },
     { name: TELEMETRY_TOPIC, numPartitions: 3 },
+    { name: CUSTOMER_TOPIC, numPartitions: 3, configEntries: { 'cleanup.policy': 'compact' } },
   ]);
 
   const here = dirname(fileURLToPath(import.meta.url));

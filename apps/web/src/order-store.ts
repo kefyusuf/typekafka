@@ -1,10 +1,23 @@
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
-import { TOPIC_ORDER_CREATED, TOPIC_PAYMENT_COMPLETED } from '@nodejs-kafka/domain';
-import type { OrderCreated, PaymentCompleted } from '@nodejs-kafka/domain';
+import {
+  CUSTOMER_TOPIC,
+  TOPIC_ORDER_CREATED,
+  TOPIC_PAYMENT_COMPLETED,
+  applyOrder,
+  applyPayment,
+  toCustomerUpdated,
+  type CustomerState,
+  type CustomerUpdated,
+  type OrderCreated,
+  type PaymentCompleted,
+} from '@nodejs-kafka/domain';
 import type { OutboxStore } from '@nodejs-kafka/infra';
 
 export class OrderStore {
   private readonly insertStmt: StatementSync;
+  // Process-local running per-customer aggregation so web-placed orders also
+  // feed the customer-360 read model (mirrors the producer's aggregation).
+  private readonly customerStates = new Map<string, CustomerState>();
 
   constructor(private readonly db: DatabaseSync) {
     db.exec(`
@@ -42,6 +55,20 @@ export class OrderStore {
         payload: payment,
         key: order.orderId,
       });
+
+      // Aggregate this order into the per-customer state and publish a
+      // customer.updated event to the compacted customers topic so the
+      // customer-360 read model (customer-view) reflects web-placed orders too.
+      const prev = this.customerStates.get(order.customerId);
+      const nextState = applyPayment(applyOrder(prev, order), payment);
+      this.customerStates.set(order.customerId, nextState);
+      const customerEvent: CustomerUpdated = toCustomerUpdated(nextState);
+      outbox.insertPending({
+        topic: CUSTOMER_TOPIC,
+        payload: customerEvent,
+        key: customerEvent.customerId,
+      });
+
       this.db.exec('COMMIT');
     } catch (err) {
       this.db.exec('ROLLBACK');
