@@ -9,6 +9,7 @@ import {
   createSampleOrder,
   createSamplePayment,
   parseEvent,
+  type OrderCreated,
   type PaymentCompleted,
 } from '@nodejs-kafka/domain';
 import {
@@ -114,32 +115,39 @@ async function main(): Promise<void> {
   // error) is retried and, if it keeps failing, dead-lettered instead of
   // wedging its partition with infinite redelivery. The inline handler only
   // logs and emits the `payment-recorded` telemetry event.
+  // `payments.completed` runs through the same parse -> retry -> DLQ -> commit
+  // pipeline as `orders.created`, so a failing payment (e.g. a telemetry emit
+  // error) is retried and, if it keeps failing, dead-lettered instead of
+  // wedging its partition with infinite redelivery. The handler only logs and
+  // emits the `payment-recorded` telemetry event.
+  const paymentHandler = async (payment: PaymentCompleted): Promise<void> => {
+    logger.info(
+      {
+        eventId: payment.eventId,
+        orderId: payment.orderId,
+        amountCents: payment.amountCents,
+        method: payment.method,
+      },
+      'payment recorded',
+    );
+    await telemetry.emit({
+      type: 'payment-recorded',
+      topic: TOPIC_PAYMENT_COMPLETED,
+      eventId: payment.eventId,
+      orderId: payment.orderId,
+      partition: -1,
+      offset: '0',
+      message: `Payment ${payment.amountCents} cents (${payment.method}) recorded`,
+      concept: 'consumer-group',
+    });
+  };
+
   const paymentRunner = createHandlerRunner(
     broker,
     dlq,
     {
       parse: (value) => parseEvent('payments.completed', value),
-      handler: async (payment: PaymentCompleted) => {
-        logger.info(
-          {
-            eventId: payment.eventId,
-            orderId: payment.orderId,
-            amountCents: payment.amountCents,
-            method: payment.method,
-          },
-          'payment recorded',
-        );
-        await telemetry.emit({
-          type: 'payment-recorded',
-          topic: TOPIC_PAYMENT_COMPLETED,
-          eventId: payment.eventId,
-          orderId: payment.orderId,
-          partition: -1,
-          offset: '0',
-          message: `Payment ${payment.amountCents} cents (${payment.method}) recorded`,
-          concept: 'consumer-group',
-        });
-      },
+      handler: paymentHandler,
       attempts: config.driver === 'confluent' ? 2 : 3,
       baseDelayMs: 50,
       telemetry,
@@ -173,17 +181,28 @@ async function main(): Promise<void> {
   ];
 
   // Retry-topic consumer: re-processes parked/scheduled orders.retry messages,
-  // escalating delay until max deliveries, then DLQ. Confluent-only (D11).
+  // escalating delay until max deliveries, then DLQ. It is topic-aware — the
+  // `retry.original-topic` header tells it which schema to parse a parked
+  // message with, so a parked `payments.completed` is retried/processed as a
+  // payment (not mis-parsed as an order). Confluent-only (D11).
   if (config.driver === 'confluent' && retryScheduler) {
     disposers.push(
       await broker.consume(
         [RETRY_TOPIC],
-        createRetryTopicRunner(
+        createRetryTopicRunner<OrderCreated | PaymentCompleted>(
           retryScheduler,
           dlq,
           {
-            parse: (value) => parseEvent('orders.created', value),
-            handler: notificationHandler,
+            parse: (value, originalTopic) =>
+              originalTopic === TOPIC_PAYMENT_COMPLETED
+                ? parseEvent('payments.completed', value)
+                : parseEvent('orders.created', value),
+            handler: async (payload) => {
+              if (payload.type === 'payment.completed') {
+                return paymentHandler(payload);
+              }
+              return notificationHandler(payload as OrderCreated);
+            },
             attempts: 2,
             baseDelayMs: 50,
             telemetry,
