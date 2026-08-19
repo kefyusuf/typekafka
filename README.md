@@ -243,7 +243,7 @@ This is the recommended way to run the project: it starts Kafka, all app service
    - *Topics* → `orders.created`, `payments.completed`, `orders.dlq`, `telemetry.events`, `customers`. Open one → *Browse messages* → the JSON payloads.
    - *Consumer groups* → `notification-service` advances its offset as messages are consumed; `web-telemetry` advances with each telemetry event; `customer-view` advances with each changelog record.
 3. **The pipeline ran** — `docker compose logs consumer` shows `consumers running`, and per message: `handler failed, will retry` → `handler exhausted retries, sending to DLQ` for the oversized order, then the offset commit. `docker compose logs producer` shows `event produced` lines with `topic`, `eventId`, `partition`, `offset`.
-4. **Watch it live** — open [http://localhost:3000](http://localhost:3000) and place an order from the form. The flow diagram lights up `producer → orders.created → consumer → committed`, and the live event log streams each step (`consumed`, `parsed`, `committed`, `payment-recorded`) with topic, partition, offset and a concept tag.
+4. **Watch it live** — open [http://localhost:3000](http://localhost:3000) and place an order from the form. The flow diagram lights up **step by step** (numbered `1, 2, 3 …`, ~1.3 s apart, current step pulsing) in canonical order: `producer → orders.created → consumer → payments.completed`, and the live event log streams each step (`consumed`, `parsed`, `committed`, `payment-recorded`) with topic, partition, offset and a concept tag. See [Flow progression order](#flow-progression-order) for the full sequence and the oversized/DLQ branch.
 5. **Trigger retry → DLQ** — place an order with **total above 100000 cents**; the log shows `retrying` → `dead-lettered`, and the message lands in `orders.dlq` (visible in Kafka UI).
 6. **Clean up / reset** — `docker compose down` stops everything and wipes Kafka state; `docker compose up --build` starts a fresh run.
 7. **Exercise the read model** — `curl http://localhost:3001/customers` lists the aggregated customers; `curl http://localhost:3001/customers/CUST-1003` shows one customer; `curl -X DELETE http://localhost:3001/customers/CUST-1003` tombstones it (subsequent GET returns 404, and the record appears in Kafka UI's `customers` topic).
@@ -418,6 +418,28 @@ interface TelemetryEvent {
 ```
 
 The web server consumes the topic in the `web-telemetry` group (`TELEMETRY_GROUP_ID`) and broadcasts every validated event to connected browsers over SSE.
+
+#### Flow progression order
+
+The flow diagram does **not** light up in the order events happen to arrive — Kafka may deliver telemetry out of produce order (events for one order share a partition key, but producers emit them in a non-logical order and retries/interleaving can reorder them, and delivery is at-least-once so duplicates can appear). Instead, the UI re-sequences every received event into the **canonical pipeline order** below and reveals one stage at a time (~1.3 s apart, each step numbered `1, 2, 3 …` and the current step pulsing), so the journey is always shown the same, beginner-friendly way:
+
+- **Normal order** (fits in the size limit):
+
+  ```
+  produced → consumed → parsed → committed → payment-recorded
+  ```
+
+  Diagram: `1 Producer → 1 orders.created → 2 Consumer → 3 payments.completed`.
+
+- **Oversized order** (exceeds the size limit, takes the retry → DLQ branch):
+
+  ```
+  produced → consumed → parsed → committed → retrying → retry-parked / retry-scheduled → dead-lettered (or invalid-to-dlq) → payment-recorded
+  ```
+
+  Diagram: the `Consumer → orders.dlq` branch lights up red, while `payments.completed` still marks the order as recorded. Both branches can light for the same order.
+
+Duplicate telemetry types are de-duplicated, and `produced` is the only event emitted by the web outbox relay — everything else comes from the consumer.
 
 ### Web API
 

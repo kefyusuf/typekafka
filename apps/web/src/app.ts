@@ -141,7 +141,7 @@ export function createWebServer(options: WebServerOptions): WebServer {
           const parsed = TelemetryEventSchema.safeParse(message.value);
           if (parsed.success) hub.broadcast(parsed.data);
         },
-        { groupId, fromBeginning: true, manualCommit: false },
+        { groupId, fromBeginning: false, manualCommit: false },
       );
 
       relayDisposer = await relay.start();
