@@ -34,6 +34,7 @@ const setup = async (registry?: Registry): Promise<RunningServer> => {
     { name: 'orders.created', numPartitions: 3 },
     { name: 'payments.completed', numPartitions: 3 },
     { name: 'telemetry.events', numPartitions: 3 },
+    { name: 'customers', numPartitions: 3 },
   ]);
 
   const db = new DatabaseSync(':memory:');
@@ -130,7 +131,8 @@ describe('web server', () => {
       body: JSON.stringify({ sku: 'MUG-WHITE', quantity: 1, unitPriceCents: 100 }),
     });
     expect(res.status).toBe(201);
-    expect(s.outboxStore.countPending()).toBe(2);
+    // orders.created + payments.completed + customers (customer.updated)
+    expect(s.outboxStore.countPending()).toBe(3);
   });
 
   it('rejects invalid order input with 400 and produces nothing', async () => {
