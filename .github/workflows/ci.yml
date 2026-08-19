@@ -34,8 +34,13 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Test (unit + integration)
+      - name: Test (unit, no Docker)
         run: npm test
+
+      # GitHub-hosted runners ship with Docker, so the Testcontainers-based
+      # real-Kafka integration suite runs here too; it skips gracefully if not.
+      - name: Test (integration, Docker-gated)
+        run: npm run test:integration
 
   compose-config:
     name: Validate compose files
