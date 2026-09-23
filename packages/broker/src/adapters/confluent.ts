@@ -1,4 +1,4 @@
-import { KafkaJS } from '@confluentinc/kafka-javascript';
+import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import type { IMessageBroker } from '../port.js';
 import type {
   ConsumeContext,
@@ -22,6 +22,20 @@ const SECURITY_PROTOCOL_SASL = 'sasl_plaintext';
 const SECURITY_PROTOCOL_SSL = 'ssl';
 const SECURITY_PROTOCOL_SASL_SSL = 'sasl_ssl';
 const PRODUCER_FLUSH_TIMEOUT_MS = 5000;
+
+/** Runtime shape of the `KafkaJS` namespace from @confluentinc/kafka-javascript. */
+type KafkaJSApi = typeof import('@confluentinc/kafka-javascript').KafkaJS;
+
+/**
+ * Load the native Confluent client only when this adapter is actually used.
+ * A dynamic import keeps `import { createBroker } from '@nodejs-kafka/broker'`
+ * free of the librdkafka binding (in-memory driver needs no native modules)
+ * and still honors Vitest's `vi.mock('@confluentinc/kafka-javascript')`.
+ */
+async function loadKafkaJS(): Promise<KafkaJSApi> {
+  const mod = await import('@confluentinc/kafka-javascript');
+  return mod.KafkaJS;
+}
 
 interface ConsumerHandle {
   consumer: KafkaJS.Consumer;
@@ -125,7 +139,8 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
 
   async connect(): Promise<void> {
     if (this.connected) return;
-    this.kafka = new KafkaJS.Kafka(this.buildGlobalConfig());
+    const kafkaJS = await loadKafkaJS();
+    this.kafka = new kafkaJS.Kafka(this.buildGlobalConfig());
     this.connected = true;
   }
 
