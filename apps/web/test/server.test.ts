@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
-import { createBroker, type IMessageBroker } from '@nodejs-kafka/broker';
+import { createBroker, type IMessageBroker } from '@typekafka/broker';
 import {
   createLogger,
   createMetrics,
   createTelemetryClient,
   OutboxRelay,
   OutboxStore,
-} from '@nodejs-kafka/infra';
+} from '@typekafka/infra';
 import type { Registry } from 'prom-client';
 import { createWebServer, type WebServer } from '../src/app.js';
 import { OrderStore } from '../src/order-store.js';

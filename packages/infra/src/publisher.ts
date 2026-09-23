@@ -3,13 +3,13 @@ import type {
   MessageTransaction,
   ProduceOptions,
   ProduceResult,
-} from '@nodejs-kafka/broker';
+} from '@typekafka/broker';
 import type {
   EventOf,
   EventTopic,
   OrderCreated,
-} from '@nodejs-kafka/domain';
-import { parseEvent } from '@nodejs-kafka/domain';
+} from '@typekafka/domain';
+import { parseEvent } from '@typekafka/domain';
 
 /**
  * Type-safe publish facade.

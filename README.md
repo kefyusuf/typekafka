@@ -1,6 +1,6 @@
-# nodejs-kafka
+# typekafka
 
-[![CI](https://github.com/kefyusuf/nodejs-kafka-reference/actions/workflows/ci.yml/badge.svg)](https://github.com/kefyusuf/nodejs-kafka-reference/actions/workflows/ci.yml)
+[![CI](https://github.com/kefyusuf/typekafka/actions/workflows/ci.yml/badge.svg)](https://github.com/kefyusuf/typekafka/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node](https://img.shields.io/badge/node-%3E%3D%2022-brightgreen)](https://nodejs.org)
 
@@ -208,21 +208,21 @@ This is the recommended way to run the project: it starts Kafka, all app service
 
 | Service | Container | What it does | Where to look |
 |---|---|---|---|
-| **Kafka** | `nodejs-kafka-kafka` | KRaft-mode broker (no ZooKeeper), listens on `9092` | — |
-| **Kafka UI** | `nodejs-kafka-ui` | Browse topics, partitions, messages and consumer-group offsets | [http://localhost:8080](http://localhost:8080) |
-| **producer** | `nodejs-kafka-producer` | Publishes a batch of order + payment events, then exits | `docker compose logs producer` |
-| **consumer** | `nodejs-kafka-consumer` | Long-running worker: `parse → retry → retry topic → DLQ → commit` on `orders.created` + `payments.completed` | `docker compose logs -f consumer` |
-| **web** | `nodejs-kafka-web` | REST + SSE server, React flow-tracker UI, and the SQLite transactional outbox | [http://localhost:3000](http://localhost:3000) |
-| **customer-view** | `nodejs-kafka-customer-view` | KTable-style read model over the compacted `customers` topic (`GET/DELETE /customers`) | [http://localhost:3001](http://localhost:3001) |
-| **otel-collector** | `nodejs-kafka-otel-collector` | Receives OTLP traces over HTTP on `4318` and prints them via its debug exporter (*observability profile*) | `docker compose logs otel-collector` |
-| **prometheus** | `nodejs-kafka-prometheus` | Scrapes the four apps' `/metrics` endpoints plus the collector's own metrics (*observability profile*) | [http://localhost:9090](http://localhost:9090) |
-| **grafana** | `nodejs-kafka-grafana` | Visualizes the metrics with a provisioned Prometheus datasource + "Node.js Kafka" dashboard (*observability profile*) | [http://localhost:3002](http://localhost:3002) |
-| **kafka-b** | `nodejs-kafka-kafka-b` | Second single-node KRaft cluster (`apache/kafka:3.7.0`) — the mirror target, listens on `9094` (*mirror profile*) | — |
-| **mirror-maker** | `nodejs-kafka-mirror-maker` | MirrorMaker 2 worker replicating `orders.*` from `kafka` to `kafka-b` (*mirror profile*) | `docker compose logs mirror-maker` |
-| **kafka-secured** | `nodejs-kafka-kafka-secured` | SASL_SSL-secured KRaft broker (PLAIN auth + `AclAuthorizer`, topic ACLs), listens on `9095` (*security profile*) | — |
-| **security-init** | `nodejs-kafka-security-init` | One-shot job granting the `app` user topic-scoped ACLs on the secured cluster, then exits (*security profile*) | `docker compose logs security-init` |
-| **producer-secured** | `nodejs-kafka-producer-secured` | Publishes the demo batch over SASL_SSL as the `app` user (*security profile*) | `docker compose logs producer-secured` |
-| **consumer-secured** | `nodejs-kafka-consumer-secured` | Long-running worker over SASL_SSL as the `app` user: `parse → retry → retry topic → DLQ → commit` (*security profile*) | `docker compose logs -f consumer-secured` |
+| **Kafka** | `typekafka-kafka` | KRaft-mode broker (no ZooKeeper), listens on `9092` | — |
+| **Kafka UI** | `typekafka-ui` | Browse topics, partitions, messages and consumer-group offsets | [http://localhost:8080](http://localhost:8080) |
+| **producer** | `typekafka-producer` | Publishes a batch of order + payment events, then exits | `docker compose logs producer` |
+| **consumer** | `typekafka-consumer` | Long-running worker: `parse → retry → retry topic → DLQ → commit` on `orders.created` + `payments.completed` | `docker compose logs -f consumer` |
+| **web** | `typekafka-web` | REST + SSE server, React flow-tracker UI, and the SQLite transactional outbox | [http://localhost:3000](http://localhost:3000) |
+| **customer-view** | `typekafka-customer-view` | KTable-style read model over the compacted `customers` topic (`GET/DELETE /customers`) | [http://localhost:3001](http://localhost:3001) |
+| **otel-collector** | `typekafka-otel-collector` | Receives OTLP traces over HTTP on `4318` and prints them via its debug exporter (*observability profile*) | `docker compose logs otel-collector` |
+| **prometheus** | `typekafka-prometheus` | Scrapes the four apps' `/metrics` endpoints plus the collector's own metrics (*observability profile*) | [http://localhost:9090](http://localhost:9090) |
+| **grafana** | `typekafka-grafana` | Visualizes the metrics with a provisioned Prometheus datasource + "Node.js Kafka" dashboard (*observability profile*) | [http://localhost:3002](http://localhost:3002) |
+| **kafka-b** | `typekafka-kafka-b` | Second single-node KRaft cluster (`apache/kafka:3.7.0`) — the mirror target, listens on `9094` (*mirror profile*) | — |
+| **mirror-maker** | `typekafka-mirror-maker` | MirrorMaker 2 worker replicating `orders.*` from `kafka` to `kafka-b` (*mirror profile*) | `docker compose logs mirror-maker` |
+| **kafka-secured** | `typekafka-kafka-secured` | SASL_SSL-secured KRaft broker (PLAIN auth + `AclAuthorizer`, topic ACLs), listens on `9095` (*security profile*) | — |
+| **security-init** | `typekafka-security-init` | One-shot job granting the `app` user topic-scoped ACLs on the secured cluster, then exits (*security profile*) | `docker compose logs security-init` |
+| **producer-secured** | `typekafka-producer-secured` | Publishes the demo batch over SASL_SSL as the `app` user (*security profile*) | `docker compose logs producer-secured` |
+| **consumer-secured** | `typekafka-consumer-secured` | Long-running worker over SASL_SSL as the `app` user: `parse → retry → retry topic → DLQ → commit` (*security profile*) | `docker compose logs -f consumer-secured` |
 
 #### How the stack works
 
@@ -305,7 +305,7 @@ All environment variables are validated **at startup** by a Zod schema (`package
 |---|---|---|
 | `BROKER_DRIVER` | `in-memory` | Broker adapter to use: `in-memory` or `confluent` |
 | `BROKER_BROKERS` | `kafka:9092` | Comma-separated bootstrap server list |
-| `BROKER_CLIENT_ID` | `nodejs-kafka-demo` | Kafka client id |
+| `BROKER_CLIENT_ID` | `typekafka-demo` | Kafka client id |
 | `BROKER_SASL_USERNAME` | — | SASL/PLAIN username (only if required) |
 | `BROKER_SASL_PASSWORD` | — | SASL/PLAIN password (only if required) |
 | `BROKER_SSL_CA_PATH` | (empty) | Path to a PEM CA file used to verify the broker's TLS certificate (confluent driver) |
@@ -317,14 +317,14 @@ All environment variables are validated **at startup** by a Zod schema (`package
 | `CONSUMER_GROUP_ID` | `notification-service` | Consumer group id for both consumers |
 | `CONSUMER_FROM_BEGINNING` | `true` | Start reading from the earliest offset when no committed offset exists |
 | `LOG_LEVEL` | `info` | pino level: `trace` / `debug` / `info` / `warn` / `error` / `fatal` |
-| `SERVICE_NAME` | `nodejs-kafka` | Tag used in structured log records |
+| `SERVICE_NAME` | `typekafka` | Tag used in structured log records |
 | `WEB_PORT` | `3000` | Web UI HTTP port |
 | `TELEMETRY_GROUP_ID` | `web-telemetry` | Consumer group id for the telemetry event stream |
 | `OUTBOX_DB_PATH` | `data/outbox.db` | Web app: SQLite file for the `orders` + `outbox` tables (parent dir is created on start; compose mounts a named volume at `/data`) |
 | `CUSTOMER_VIEW_PORT` | `3001` | `customer-view` service: HTTP port for the customer read model |
 | `CUSTOMER_VIEW_GROUP_ID` | `customer-view` | `customer-view` service: consumer group id for the `customers` changelog |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | (empty) | OTel OTLP/HTTP traces endpoint (e.g. `http://otel-collector:4318/v1/traces`); empty → tracing disabled |
-| `OTEL_SERVICE_NAME` | (empty) | OTel resource `service.name` (falls back to `nodejs-kafka` when empty) |
+| `OTEL_SERVICE_NAME` | (empty) | OTel resource `service.name` (falls back to `typekafka` when empty) |
 | `METRICS_PORT` | (empty) | Port for the app's Prometheus `/metrics` HTTP server; empty → metrics server disabled |
 
 > Metric endpoints in the compose stack: producer → `producer:9464/metrics`, consumer → `consumer:9465/metrics` (both via `METRICS_PORT`), web → `web:3000/metrics`, customer-view → `customer-view:3001/metrics` (both served on their own Express port).

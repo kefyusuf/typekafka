@@ -1,10 +1,10 @@
-import type { IMessageBroker } from '@nodejs-kafka/broker';
+import type { IMessageBroker } from '@typekafka/broker';
 import {
   TELEMETRY_TOPIC,
   TelemetryEventSchema,
   type TelemetryEvent,
   type TelemetryEventType,
-} from '@nodejs-kafka/domain';
+} from '@typekafka/domain';
 import type { AppLogger } from './logger.js';
 
 export interface TelemetryInput {

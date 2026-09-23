@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { RequestHandler } from 'express';
 
-const REALM = 'nodejs-kafka';
+const REALM = 'typekafka';
 
 interface Credentials {
   user: string;

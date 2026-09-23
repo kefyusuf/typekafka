@@ -1,5 +1,5 @@
-import type { IMessageBroker, KafkaMessage } from '@nodejs-kafka/broker';
-import { RETRY_TOPIC } from '@nodejs-kafka/domain';
+import type { IMessageBroker, KafkaMessage } from '@typekafka/broker';
+import { RETRY_TOPIC } from '@typekafka/domain';
 
 export const RETRY_COUNT_HEADER = 'retry-count';
 export const NEXT_DELIVER_AT_HEADER = 'next-deliver-at';

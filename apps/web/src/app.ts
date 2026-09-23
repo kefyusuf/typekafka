@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import express from 'express';
-import type { Disposer, IMessageBroker } from '@nodejs-kafka/broker';
+import type { Disposer, IMessageBroker } from '@typekafka/broker';
 import {
   TELEMETRY_TOPIC,
   TelemetryEventSchema,
   createSamplePayment,
   OVERSIZED_THRESHOLD_CENTS,
   type OrderCreated,
-} from '@nodejs-kafka/domain';
+} from '@typekafka/domain';
 import {
   createBasicAuthMiddleware,
   metricsMiddleware,
@@ -16,7 +16,7 @@ import {
   type AppMetrics,
   type OutboxRelay,
   type OutboxStore,
-} from '@nodejs-kafka/infra';
+} from '@typekafka/infra';
 import { type OrderStore } from './order-store.js';
 import { SseHub } from './sse.js';
 

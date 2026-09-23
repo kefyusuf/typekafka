@@ -1,6 +1,6 @@
 # Observability — OTel spans + Prometheus metrics
 
-This guide explains how `nodejs-kafka` adds OpenTelemetry **manual spans** around produce and consume plus a **Prometheus `/metrics`** endpoint per app — with an optional `observability` Docker profile (`otel-collector` → Prometheus → Grafana) — without changing the broker port, the pipeline, or any domain code.
+This guide explains how `typekafka` adds OpenTelemetry **manual spans** around produce and consume plus a **Prometheus `/metrics`** endpoint per app — with an optional `observability` Docker profile (`otel-collector` → Prometheus → Grafana) — without changing the broker port, the pipeline, or any domain code.
 
 ## Why observability
 
@@ -12,7 +12,7 @@ A Kafka pipeline is a black box without telemetry: messages leave the producer, 
 ## How it fits together
 
 ```
-packages/broker/src/trace.ts                    withSpan (tracer '@nodejs-kafka/broker')
+packages/broker/src/trace.ts                    withSpan (tracer '@typekafka/broker')
         │  manual spans: produce / consume
         ▼
 packages/broker/src/adapters/*.ts               InMemoryBrokerAdapter, ConfluentKafkaAdapter
@@ -24,7 +24,7 @@ packages/infra/src/tracing.ts                   initTracing (NodeSDK + OTLP HTTP
 apps/*/src/main.ts                              startMetricsServer / metricsMiddleware (/metrics)
 ```
 
-- **Spans are manual** — `withSpan` in `packages/broker/src/trace.ts` wraps the produce and consume paths in both adapters. It calls `trace.getTracer('@nodejs-kafka/broker')` from `@opentelemetry/api`, which is a **no-op without an SDK**, so an app that never calls `initTracing` pays a few nanoseconds per message and ships zero telemetry.
+- **Spans are manual** — `withSpan` in `packages/broker/src/trace.ts` wraps the produce and consume paths in both adapters. It calls `trace.getTracer('@typekafka/broker')` from `@opentelemetry/api`, which is a **no-op without an SDK**, so an app that never calls `initTracing` pays a few nanoseconds per message and ships zero telemetry.
 - **SDK bootstrap** — each app calls `initTracing` (`packages/infra/src/tracing.ts`) at startup. With an endpoint set it starts a `NodeSDK` with an `OTLPTraceExporter`; with an empty endpoint (or on init failure) it returns a no-op and logs a warning.
 - **Metrics** — `createMetrics` (`packages/infra/src/metrics.ts`) builds a per-app `prom-client` registry. Apps with a `METRICS_PORT` serve the registry on a dedicated HTTP server at `/metrics`; the web and customer-view apps mount the same registry as an Express middleware on their own port.
 
@@ -61,7 +61,7 @@ Three env vars control observability (`packages/infra/src/config.ts`):
 | Variable | Default | Effect |
 |---|---|---|
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | (empty) | OTel OTLP/HTTP traces endpoint (e.g. `http://otel-collector:4318/v1/traces`); empty → tracing disabled (no-op) |
-| `OTEL_SERVICE_NAME` | (empty) | OTel resource `service.name`; falls back to `nodejs-kafka` when empty |
+| `OTEL_SERVICE_NAME` | (empty) | OTel resource `service.name`; falls back to `typekafka` when empty |
 | `METRICS_PORT` | (empty) | Port for the app's `/metrics` HTTP server; empty → no metrics server |
 
 In the compose stack these are preset: `METRICS_PORT=9464` (producer) / `9465` (consumer), `OTEL_SERVICE_NAME` matches the service, and `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318/v1/traces` — but all three are inert unless the collector is running.
@@ -93,7 +93,7 @@ This starts the normal stack **plus** the observability services:
 
 ## Verify
 
-1. **Metrics are scraped** — open Prometheus at `:9090` → *Status → Targets*. The `nodejs-kafka` job should show `producer:9464`, `consumer:9465`, `web:3000`, `customer-view:3001` **UP**, and the `otel-collector` job should show `otel-collector:8888` **UP**. (Prometheus scrapes over the compose network; the individual ports are not published to the host.)
+1. **Metrics are scraped** — open Prometheus at `:9090` → *Status → Targets*. The `typekafka` job should show `producer:9464`, `consumer:9465`, `web:3000`, `customer-view:3001` **UP**, and the `otel-collector` job should show `otel-collector:8888` **UP**. (Prometheus scrapes over the compose network; the individual ports are not published to the host.)
 2. **Generate traffic** — `docker compose up producer` publishes a batch and exits; the consumer keeps running. `curl http://localhost:3000/api/orders` (POST) exercises the web outbox path.
 3. **See spans** — `docker compose logs otel-collector` shows `produce` / `consume` spans with their `messaging.*` attributes.
 4. **See metrics** — open Grafana at `:3002` and open the **Node.js Kafka** dashboard (datasource + dashboard are provisioned, no setup). Panels: rate of messages produced/consumed, retries, DLQ total, handler duration p95, outbox published.

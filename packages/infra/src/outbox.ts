@@ -4,7 +4,7 @@ import type {
   IMessageBroker,
   MessageTransaction,
   ProduceResult,
-} from '@nodejs-kafka/broker';
+} from '@typekafka/broker';
 import type { AppLogger } from './logger.js';
 
 export interface OutboxRow {

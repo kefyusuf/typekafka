@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
-import { createBroker } from '@nodejs-kafka/broker';
+import { createBroker } from '@typekafka/broker';
 import type {
   IMessageBroker,
   KafkaMessage,
   MessageTransaction,
   ProduceResult,
-} from '@nodejs-kafka/broker';
+} from '@typekafka/broker';
 import { OutboxRelay, OutboxStore } from '../src/outbox.js';
 import type { OutboxRow } from '../src/outbox.js';
 import { createLogger } from '../src/logger.js';

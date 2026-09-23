@@ -6,7 +6,7 @@ const nonEmpty = (label: string) =>
 export const BrokerEnvSchema = z.object({
   BROKER_DRIVER: z.enum(['in-memory', 'confluent']).default('in-memory'),
   BROKER_BROKERS: z.string().default('kafka:9092'),
-  BROKER_CLIENT_ID: nonEmpty('BROKER_CLIENT_ID').default('nodejs-kafka-demo'),
+  BROKER_CLIENT_ID: nonEmpty('BROKER_CLIENT_ID').default('typekafka-demo'),
   BROKER_SASL_USERNAME: z.string().optional(),
   BROKER_SASL_PASSWORD: z.string().optional(),
   BROKER_SSL_CA_PATH: z.string().default(''),
@@ -27,7 +27,7 @@ export const BrokerEnvSchema = z.object({
     .default('info'),
   WEB_PORT: z.coerce.number().int().positive().default(3000),
   TELEMETRY_GROUP_ID: z.string().trim().min(1).default('web-telemetry'),
-  SERVICE_NAME: z.string().trim().default('nodejs-kafka'),
+  SERVICE_NAME: z.string().trim().default('typekafka'),
   CUSTOMER_VIEW_PORT: z.coerce.number().int().positive().default(3001),
   CUSTOMER_VIEW_GROUP_ID: z.string().trim().min(1).default('customer-view'),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().default(''),

@@ -16,7 +16,7 @@ const avroSubject = (topic: string): string => `${topic}-value`;
 export interface AvroCodecOptions {
   /** Schema Registry client (real `SchemaRegistryClient` or `MockClient` in tests). */
   client: Client;
-  /** Per-topic curated Avro schemas (see `topicToAvroSchema` in @nodejs-kafka/domain). */
+  /** Per-topic curated Avro schemas (see `topicToAvroSchema` in @typekafka/domain). */
   schemas: Record<string, Record<string, unknown>>;
 }
 

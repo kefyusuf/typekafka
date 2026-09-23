@@ -1,11 +1,11 @@
-import type { ConsumeContext, ConsumeHandler, IMessageBroker } from '@nodejs-kafka/broker';
+import type { ConsumeContext, ConsumeHandler, IMessageBroker } from '@typekafka/broker';
 import type {
   AppLogger,
   IdempotencyFilter,
   RetryTopicScheduler,
   TelemetryClient,
-} from '@nodejs-kafka/infra';
-import { DlqManager } from '@nodejs-kafka/infra';
+} from '@typekafka/infra';
+import { DlqManager } from '@typekafka/infra';
 import {
   extractMessageMeta,
   runHandlerWithRetry,

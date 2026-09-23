@@ -10,8 +10,8 @@ import {
   type CustomerUpdated,
   type OrderCreated,
   type PaymentCompleted,
-} from '@nodejs-kafka/domain';
-import type { OutboxStore } from '@nodejs-kafka/infra';
+} from '@typekafka/domain';
+import type { OutboxStore } from '@typekafka/infra';
 
 export class OrderStore {
   private readonly insertStmt: StatementSync;

@@ -1,5 +1,5 @@
-import type { IMessageBroker, KafkaMessage } from '@nodejs-kafka/broker';
-import { DLQ_TOPIC } from '@nodejs-kafka/domain';
+import type { IMessageBroker, KafkaMessage } from '@typekafka/broker';
+import { DLQ_TOPIC } from '@typekafka/domain';
 
 export interface DlqEntry {
   topic: string;

@@ -1,5 +1,5 @@
 import type React from 'react';
-import type { TelemetryEventType } from '@nodejs-kafka/domain';
+import type { TelemetryEventType } from '@typekafka/domain';
 
 interface Props {
   activeSteps: TelemetryEventType[];

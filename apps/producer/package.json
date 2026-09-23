@@ -1,5 +1,5 @@
 {
-  "name": "@nodejs-kafka/producer",
+  "name": "@typekafka/producer",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,9 +10,9 @@
     "dev": "tsx src/main.ts"
   },
   "dependencies": {
-    "@nodejs-kafka/broker": "*",
-    "@nodejs-kafka/domain": "*",
-    "@nodejs-kafka/infra": "*"
+    "@typekafka/broker": "*",
+    "@typekafka/domain": "*",
+    "@typekafka/infra": "*"
   },
   "devDependencies": {
     "@types/node": "^22.5.0",

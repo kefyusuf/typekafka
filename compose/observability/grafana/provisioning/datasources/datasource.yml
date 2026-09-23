@@ -5,4 +5,4 @@ datasources:
     access: proxy
     url: http://prometheus:9090
     isDefault: true
-    uid: nodejs-kafka-prometheus
+    uid: typekafka-prometheus

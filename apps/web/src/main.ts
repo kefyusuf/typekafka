@@ -2,13 +2,13 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
-import { createBroker } from '@nodejs-kafka/broker';
+import { createBroker } from '@typekafka/broker';
 import {
   CUSTOMER_TOPIC,
   TELEMETRY_TOPIC,
   TOPIC_ORDER_CREATED,
   TOPIC_PAYMENT_COMPLETED,
-} from '@nodejs-kafka/domain';
+} from '@typekafka/domain';
 import {
   buildBrokerConfig,
   createLogger,
@@ -19,7 +19,7 @@ import {
   OutboxRelay,
   OutboxStore,
   registerGracefulShutdown,
-} from '@nodejs-kafka/infra';
+} from '@typekafka/infra';
 import { OrderStore } from './order-store.js';
 import { makeProducedHook } from './telemetry.js';
 import { createWebServer } from './app.js';

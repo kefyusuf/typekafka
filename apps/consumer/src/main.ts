@@ -1,4 +1,4 @@
-import { createBroker, type Disposer } from '@nodejs-kafka/broker';
+import { createBroker, type Disposer } from '@typekafka/broker';
 import {
   DLQ_TOPIC,
   RETRY_TOPIC,
@@ -11,7 +11,7 @@ import {
   parseEvent,
   type OrderCreated,
   type PaymentCompleted,
-} from '@nodejs-kafka/domain';
+} from '@typekafka/domain';
 import {
   buildBrokerConfig,
   createLogger,
@@ -27,7 +27,7 @@ import {
   TypedPublisher,
   type AppLogger,
   type RetryTopicScheduler,
-} from '@nodejs-kafka/infra';
+} from '@typekafka/infra';
 import { createHandlerRunner } from './handler-runner.js';
 import { createRetryTopicRunner } from './retry-runner.js';
 

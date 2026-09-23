@@ -1,6 +1,6 @@
 # Learning path
 
-A staged route through the `nodejs-kafka` repo, from Kafka concepts to the reliability patterns this codebase demonstrates. Work the stages in order — each one builds on the previous. This page is the anchor that the Phase 2 and Phase 3 guide docs link back to.
+A staged route through the `typekafka` repo, from Kafka concepts to the reliability patterns this codebase demonstrates. Work the stages in order — each one builds on the previous. This page is the anchor that the Phase 2 and Phase 3 guide docs link back to.
 
 ## Stage 0 — Concepts
 

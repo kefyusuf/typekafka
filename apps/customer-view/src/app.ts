@@ -1,13 +1,13 @@
 import { createServer } from 'node:http';
 import express from 'express';
-import type { IMessageBroker } from '@nodejs-kafka/broker';
-import { CUSTOMER_TOPIC } from '@nodejs-kafka/domain';
+import type { IMessageBroker } from '@typekafka/broker';
+import { CUSTOMER_TOPIC } from '@typekafka/domain';
 import {
   createBasicAuthMiddleware,
   metricsMiddleware,
   type AppLogger,
   type AppMetrics,
-} from '@nodejs-kafka/infra';
+} from '@typekafka/infra';
 import { type CustomerStore } from './customer-store.js';
 
 export interface CustomerViewServerOptions {

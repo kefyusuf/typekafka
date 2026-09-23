@@ -1,7 +1,7 @@
-import type { AppLogger, DlqManager, TelemetryClient } from '@nodejs-kafka/infra';
-import type { KafkaMessage } from '@nodejs-kafka/broker';
+import type { AppLogger, DlqManager, TelemetryClient } from '@typekafka/infra';
+import type { KafkaMessage } from '@typekafka/broker';
 import type { Counter, Histogram } from 'prom-client';
-import { withRetry } from '@nodejs-kafka/infra';
+import { withRetry } from '@typekafka/infra';
 
 export interface ConsumerMetrics {
   messagesConsumed: Counter<string>;

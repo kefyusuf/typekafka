@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createBroker, type KafkaMessage } from '@nodejs-kafka/broker';
-import { RETRY_TOPIC } from '@nodejs-kafka/domain';
+import { createBroker, type KafkaMessage } from '@typekafka/broker';
+import { RETRY_TOPIC } from '@typekafka/domain';
 import { RetryTopicScheduler } from '../src/retry-topic.js';
 
 function brokerWithTopic() {

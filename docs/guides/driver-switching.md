@@ -1,6 +1,6 @@
 # Driver switching
 
-This guide explains how `nodejs-kafka` swaps between its two broker drivers behind the `IMessageBroker` port, and which driver supports which capability.
+This guide explains how `typekafka` swaps between its two broker drivers behind the `IMessageBroker` port, and which driver supports which capability.
 
 ## The two drivers
 

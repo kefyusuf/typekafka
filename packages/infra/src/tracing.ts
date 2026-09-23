@@ -27,7 +27,7 @@ export function initTracing(options: {
     const sdk = new NodeSDK({
       resource: defaultResource().merge(
         resourceFromAttributes({
-          [SEMRESATTRS_SERVICE_NAME]: serviceName || 'nodejs-kafka',
+          [SEMRESATTRS_SERVICE_NAME]: serviceName || 'typekafka',
         }),
       ),
       traceExporter: new OTLPTraceExporter({ url: endpoint }),

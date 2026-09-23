@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { TelemetryEvent, TelemetryEventType } from '@nodejs-kafka/domain';
+import type { TelemetryEvent, TelemetryEventType } from '@typekafka/domain';
 import { FlowDiagram } from './FlowDiagram.js';
 import { EventLog } from './EventLog.js';
 import { OrderForm } from './OrderForm.js';

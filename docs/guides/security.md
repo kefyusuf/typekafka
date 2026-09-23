@@ -1,6 +1,6 @@
 # Security — SASL_SSL + PLAIN auth + topic ACLs
 
-This guide explains how `nodejs-kafka` secures its Kafka stack: a **SASL_SSL** listener (TLS transport encryption + SASL/PLAIN username/password authentication) on a dedicated `kafka-secured` cluster, with **topic-scoped ACLs** so the app user can only touch what it needs — all without changing any application or domain code.
+This guide explains how `typekafka` secures its Kafka stack: a **SASL_SSL** listener (TLS transport encryption + SASL/PLAIN username/password authentication) on a dedicated `kafka-secured` cluster, with **topic-scoped ACLs** so the app user can only touch what it needs — all without changing any application or domain code.
 
 ## Why TLS + auth + ACLs
 

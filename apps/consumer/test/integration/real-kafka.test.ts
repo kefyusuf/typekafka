@@ -2,16 +2,16 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { KafkaContainer, type StartedKafkaContainer } from '@testcontainers/kafka';
-import { createBroker } from '@nodejs-kafka/broker';
-import type { IMessageBroker, KafkaMessage } from '@nodejs-kafka/broker';
+import { createBroker } from '@typekafka/broker';
+import type { IMessageBroker, KafkaMessage } from '@typekafka/broker';
 import {
   DLQ_TOPIC,
   TOPIC_ORDER_CREATED,
   createSampleOrder,
   parseEvent,
   type OrderCreated,
-} from '@nodejs-kafka/domain';
-import { DlqManager, createIdempotencyFilter, type AppLogger } from '@nodejs-kafka/infra';
+} from '@typekafka/domain';
+import { DlqManager, createIdempotencyFilter, type AppLogger } from '@typekafka/infra';
 import { createHandlerRunner } from '../../src/handler-runner.js';
 
 const execFileAsync = promisify(execFile);

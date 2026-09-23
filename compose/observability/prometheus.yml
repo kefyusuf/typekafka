@@ -1,7 +1,7 @@
 global:
   scrape_interval: 15s
 scrape_configs:
-  - job_name: nodejs-kafka
+  - job_name: typekafka
     metrics_path: /metrics # prometheus default, kept explicit for clarity
     static_configs:
       - targets: ['producer:9464', 'consumer:9465', 'web:3000', 'customer-view:3001']

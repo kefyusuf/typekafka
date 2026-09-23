@@ -1,7 +1,7 @@
 apiVersion: 1
 providers:
-  - name: nodejs-kafka
-    folder: nodejs-kafka
+  - name: typekafka
+    folder: typekafka
     type: file
     disableDeletion: false
     updateIntervalSeconds: 30

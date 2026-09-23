@@ -1,12 +1,12 @@
-import type { ConsumeContext, ConsumeHandler } from '@nodejs-kafka/broker';
-import { TOPIC_ORDER_CREATED } from '@nodejs-kafka/domain';
+import type { ConsumeContext, ConsumeHandler } from '@typekafka/broker';
+import { TOPIC_ORDER_CREATED } from '@typekafka/domain';
 import type {
   AppLogger,
   DlqManager,
   IdempotencyFilter,
   RetryTopicScheduler,
   TelemetryClient,
-} from '@nodejs-kafka/infra';
+} from '@typekafka/infra';
 import { setTimeout as sleep } from 'node:timers/promises';
 import {
   extractMessageMeta,

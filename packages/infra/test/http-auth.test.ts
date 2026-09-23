@@ -69,7 +69,7 @@ describe('createBasicAuthMiddleware', () => {
     try {
       const res = await request(s.url);
       expect(res.status).toBe(401);
-      expect(res.wwwAuthenticate).toContain('Basic realm="nodejs-kafka"');
+      expect(res.wwwAuthenticate).toContain('Basic realm="typekafka"');
     } finally {
       await s.close();
     }

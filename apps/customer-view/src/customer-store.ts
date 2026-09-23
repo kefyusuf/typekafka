@@ -1,5 +1,5 @@
-import type { KafkaMessage } from '@nodejs-kafka/broker';
-import type { CustomerUpdated } from '@nodejs-kafka/domain';
+import type { KafkaMessage } from '@typekafka/broker';
+import type { CustomerUpdated } from '@typekafka/domain';
 
 export class CustomerStore {
   private readonly customers = new Map<string, CustomerUpdated>();

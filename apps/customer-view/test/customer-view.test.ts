@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
-import type { IMessageBroker, KafkaMessage } from '@nodejs-kafka/broker';
-import { CUSTOMER_TOPIC, type CustomerUpdated } from '@nodejs-kafka/domain';
-import { createLogger, createMetrics } from '@nodejs-kafka/infra';
+import type { IMessageBroker, KafkaMessage } from '@typekafka/broker';
+import { CUSTOMER_TOPIC, type CustomerUpdated } from '@typekafka/domain';
+import { createLogger, createMetrics } from '@typekafka/infra';
 import type { Registry } from 'prom-client';
 import { createCustomerViewServer, type CustomerViewServer } from '../src/app.js';
 import { CustomerStore } from '../src/customer-store.js';

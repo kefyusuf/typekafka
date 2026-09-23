@@ -1,5 +1,5 @@
 import { Fragment } from 'react';
-import type { TelemetryEvent, TelemetryEventType } from '@nodejs-kafka/domain';
+import type { TelemetryEvent, TelemetryEventType } from '@typekafka/domain';
 
 interface Props {
   events: TelemetryEvent[];

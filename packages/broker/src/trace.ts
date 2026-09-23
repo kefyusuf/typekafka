@@ -7,7 +7,7 @@ import type {
   TraceFlags,
 } from '@opentelemetry/api';
 
-const tracer = trace.getTracer('@nodejs-kafka/broker');
+const tracer = trace.getTracer('@typekafka/broker');
 
 const TRACEPARENT_HEADER = 'traceparent';
 

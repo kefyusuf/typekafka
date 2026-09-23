@@ -1,5 +1,5 @@
-import type { ProduceResult } from '@nodejs-kafka/broker';
-import type { AppMetrics, OutboxRow, TelemetryClient } from '@nodejs-kafka/infra';
+import type { ProduceResult } from '@typekafka/broker';
+import type { AppMetrics, OutboxRow, TelemetryClient } from '@typekafka/infra';
 
 export function makeProducedHook(
   telemetry: TelemetryClient,

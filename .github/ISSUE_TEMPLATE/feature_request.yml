@@ -1,5 +1,5 @@
 name: Feature request
-description: Propose a new feature for the nodejs-kafka reference project
+description: Propose a new feature for the typekafka reference project
 title: "[Feature]: "
 labels: ["enhancement"]
 body:

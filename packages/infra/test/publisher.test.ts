@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createBroker } from '@nodejs-kafka/broker';
-import type { MessageTransaction } from '@nodejs-kafka/broker';
-import { createSampleOrder } from '@nodejs-kafka/domain';
+import { createBroker } from '@typekafka/broker';
+import type { MessageTransaction } from '@typekafka/broker';
+import { createSampleOrder } from '@typekafka/domain';
 import { TypedPublisher } from '../src/index.js';
 
 describe('TypedPublisher', () => {

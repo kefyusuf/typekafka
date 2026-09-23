@@ -2,7 +2,7 @@
 
 ## Welcome
 
-`nodejs-kafka` is a TypeScript + Node.js reference project that demonstrates how to build a small, type-safe Kafka application using an adapter pattern over pluggable drivers (`in-memory` for local development and `@confluentinc/kafka-javascript` for real brokers). It is written to be a friendly starting point for newcomers to Kafka, Node.js, or TypeScript, so every contribution that improves the example, its tests, or its documentation is welcome, no matter how small.
+`typekafka` is a TypeScript + Node.js reference project that demonstrates how to build a small, type-safe Kafka application using an adapter pattern over pluggable drivers (`in-memory` for local development and `@confluentinc/kafka-javascript` for real brokers). It is written to be a friendly starting point for newcomers to Kafka, Node.js, or TypeScript, so every contribution that improves the example, its tests, or its documentation is welcome, no matter how small.
 
 ## Prerequisites
 

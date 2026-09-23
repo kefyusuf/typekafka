@@ -1,6 +1,6 @@
 # Schema Registry + Avro
 
-This guide explains how `nodejs-kafka` adds Schema Registry + Avro serialization behind the existing `MessageCodec` seam — curated Avro schemas, explicit registration with `BACKWARD` compatibility, and the Confluent wire format — without changing any application or domain code.
+This guide explains how `typekafka` adds Schema Registry + Avro serialization behind the existing `MessageCodec` seam — curated Avro schemas, explicit registration with `BACKWARD` compatibility, and the Confluent wire format — without changing any application or domain code.
 
 ## Why Schema Registry + Avro
 

@@ -1,5 +1,5 @@
 import { parseArgs } from 'node:util';
-import { createBroker } from '@nodejs-kafka/broker';
+import { createBroker } from '@typekafka/broker';
 import {
   CUSTOMER_TOPIC,
   TOPIC_ORDER_CREATED,
@@ -10,7 +10,7 @@ import {
   createSamplePayment,
   toCustomerUpdated,
   type CustomerState,
-} from '@nodejs-kafka/domain';
+} from '@typekafka/domain';
 import {
   buildBrokerConfig,
   createLogger,
@@ -21,7 +21,7 @@ import {
   startMetricsServer,
   TypedPublisher,
   type AppLogger,
-} from '@nodejs-kafka/infra';
+} from '@typekafka/infra';
 
 async function main(): Promise<void> {
   const config = loadConfig();

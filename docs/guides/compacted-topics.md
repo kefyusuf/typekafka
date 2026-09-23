@@ -1,6 +1,6 @@
 # Compacted topics + customer-360
 
-This guide explains how `nodejs-kafka` builds a **KTable-style read model** the Node.js way: the producer aggregates per-customer state into a full-state changelog on a **compacted** `customers` topic, and a dedicated `customer-view` service replays that changelog into an in-memory store and serves it over REST. No Kafka Streams, no state stores — just log compaction, tombstones, and a `Map`.
+This guide explains how `typekafka` builds a **KTable-style read model** the Node.js way: the producer aggregates per-customer state into a full-state changelog on a **compacted** `customers` topic, and a dedicated `customer-view` service replays that changelog into an in-memory store and serves it over REST. No Kafka Streams, no state stores — just log compaction, tombstones, and a `Map`.
 
 ## Why compacted topics
 

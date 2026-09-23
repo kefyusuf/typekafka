@@ -3,7 +3,7 @@ services:
     # Official Apache image in KRaft mode (no ZooKeeper).
     # bitnami/kafka was pulled from Docker Hub, so we use apache/kafka instead.
     image: apache/kafka:3.7.0
-    container_name: nodejs-kafka-kafka
+    container_name: typekafka-kafka
     environment:
       # KRaft combined mode: single node runs controller + broker.
       # Env vars use the KAFKA_ prefix and map to server.properties keys
@@ -52,7 +52,7 @@ services:
     # reliably serves an open UI when AUTH_TYPE is absent; newer `latest` builds
     # render a login screen by default even with auth disabled.
     image: provectuslabs/kafka-ui:v0.7.2
-    container_name: nodejs-kafka-ui
+    container_name: typekafka-ui
     ports:
       - "8080:8080"
     environment:
@@ -134,7 +134,7 @@ services:
 
   kafka-b:
     image: apache/kafka:3.7.0
-    container_name: nodejs-kafka-kafka-b
+    container_name: typekafka-kafka-b
     profiles: ["mirror"]
     environment:
       # KRaft combined mode: single node runs controller + broker.
@@ -183,7 +183,7 @@ services:
     # /bin/connect-mirror-maker /tmp/config/mm2.properties, so we only mount
     # the config.
     image: confluentinc/cp-kafka-mirror-maker:7.7.0
-    container_name: nodejs-kafka-mirror-maker
+    container_name: typekafka-mirror-maker
     profiles: ["mirror"]
     volumes:
       - ./compose/mirror/mm2.properties:/tmp/config/mm2.properties:ro
@@ -215,7 +215,7 @@ services:
     # Self-signed certs are generated inside the container by the entrypoint
     # (keytool, Windows-safe — no host scripts).
     image: apache/kafka:3.7.0
-    container_name: nodejs-kafka-kafka-secured
+    container_name: typekafka-kafka-secured
     profiles: ["security"]
     entrypoint: ["/bin/sh", "/tmp/security/kafka-entrypoint.sh"]
     volumes:
@@ -296,7 +296,7 @@ services:
     # One-shot job: grants the app user topic-scoped ACLs, then exits. The
     # secured apps start only after it completes.
     image: apache/kafka:3.7.0
-    container_name: nodejs-kafka-security-init
+    container_name: typekafka-security-init
     profiles: ["security"]
     entrypoint: ["/bin/sh", "/tmp/security/provision-acls.sh"]
     volumes:
@@ -330,7 +330,7 @@ services:
     build:
       context: .
       dockerfile: apps/producer/Dockerfile
-    container_name: nodejs-kafka-producer
+    container_name: typekafka-producer
     environment:
       SERVICE_NAME: producer
       BROKER_DRIVER: confluent
@@ -359,7 +359,7 @@ services:
     build:
       context: .
       dockerfile: apps/consumer/Dockerfile
-    container_name: nodejs-kafka-consumer
+    container_name: typekafka-consumer
     environment:
       SERVICE_NAME: consumer
       BROKER_DRIVER: confluent
@@ -390,13 +390,13 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
-    container_name: nodejs-kafka-web
+    container_name: typekafka-web
     ports:
       - "3000:3000"
     environment:
       BROKER_DRIVER: confluent
       BROKER_BROKERS: kafka:9092
-      BROKER_CLIENT_ID: nodejs-kafka-web
+      BROKER_CLIENT_ID: typekafka-web
       LOG_LEVEL: info
       WEB_PORT: "3000"
       TELEMETRY_GROUP_ID: web-telemetry
@@ -435,13 +435,13 @@ services:
     build:
       context: .
       dockerfile: apps/customer-view/Dockerfile
-    container_name: nodejs-kafka-customer-view
+    container_name: typekafka-customer-view
     ports:
       - "3001:3001"
     environment:
       BROKER_DRIVER: confluent
       BROKER_BROKERS: kafka:9092
-      BROKER_CLIENT_ID: nodejs-kafka-customer-view
+      BROKER_CLIENT_ID: typekafka-customer-view
       LOG_LEVEL: info
       CUSTOMER_VIEW_PORT: "3001"
       SCHEMA_REGISTRY_URL: ${SCHEMA_REGISTRY_URL:-}
@@ -473,7 +473,7 @@ services:
     build:
       context: .
       dockerfile: apps/producer/Dockerfile
-    container_name: nodejs-kafka-producer-secured
+    container_name: typekafka-producer-secured
     profiles: ["security"]
     volumes:
       - security-certs:/certs:ro
@@ -505,7 +505,7 @@ services:
     build:
       context: .
       dockerfile: apps/consumer/Dockerfile
-    container_name: nodejs-kafka-consumer-secured
+    container_name: typekafka-consumer-secured
     profiles: ["security"]
     volumes:
       - security-certs:/certs:ro
@@ -539,14 +539,14 @@ services:
   # otel-collector receives OTLP traces over HTTP from the app services and
   # dumps them to stdout via the debug exporter; prometheus scrapes the four
   # app metric endpoints plus the collector's own /metrics; grafana visualizes
-  # them with a provisioned Prometheus datasource and the nodejs-kafka
+  # them with a provisioned Prometheus datasource and the typekafka
   # dashboard. All three run only with: docker compose --profile observability up
 
   otel-collector:
     # 0.111.0 pinned: known-good contrib release for the otlp receiver +
     # debug exporter used here; avoids drift from a `latest` tag.
     image: otel/opentelemetry-collector-contrib:0.111.0
-    container_name: nodejs-kafka-otel-collector
+    container_name: typekafka-otel-collector
     command: --config /etc/otel-collector.yaml
     volumes:
       - ./compose/observability/otel-collector.yaml:/etc/otel-collector.yaml:ro
@@ -567,7 +567,7 @@ services:
   prometheus:
     # v2.53.0 pinned: stable release; newer majors change CLI flags.
     image: prom/prometheus:v2.53.0
-    container_name: nodejs-kafka-prometheus
+    container_name: typekafka-prometheus
     command: --config.file=/etc/prometheus/prometheus.yml
     volumes:
       - ./compose/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -589,7 +589,7 @@ services:
   grafana:
     # 11.1.0 pinned: supports dashboard schemaVersion 39 used here.
     image: grafana/grafana:11.1.0
-    container_name: nodejs-kafka-grafana
+    container_name: typekafka-grafana
     ports:
       - "3002:3000" # host 3000 is taken by the web app
     volumes:

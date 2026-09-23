@@ -1,6 +1,6 @@
 # Multi-cluster mirroring with MirrorMaker 2
 
-This guide explains how `nodejs-kafka` adds a second single-node KRaft cluster (`kafka-b`) and uses **MirrorMaker 2 (MM2)** to replicate the `orders.*` topics from the primary cluster into it — via the optional `mirror` Docker profile — without changing any application or domain code.
+This guide explains how `typekafka` adds a second single-node KRaft cluster (`kafka-b`) and uses **MirrorMaker 2 (MM2)** to replicate the `orders.*` topics from the primary cluster into it — via the optional `mirror` Docker profile — without changing any application or domain code.
 
 ## Why multi-cluster + MM2
 

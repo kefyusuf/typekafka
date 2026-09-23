@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createBroker, type KafkaMessage } from '@nodejs-kafka/broker';
-import { DLQ_TOPIC } from '@nodejs-kafka/domain';
+import { createBroker, type KafkaMessage } from '@typekafka/broker';
+import { DLQ_TOPIC } from '@typekafka/domain';
 import { DlqManager } from '../src/dlq.js';
 
 function brokerWithTopic() {

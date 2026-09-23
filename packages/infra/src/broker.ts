@@ -1,5 +1,5 @@
-import { createAvroCodec, type BrokerConfig } from '@nodejs-kafka/broker';
-import { topicToAvroSchema } from '@nodejs-kafka/domain';
+import { createAvroCodec, type BrokerConfig } from '@typekafka/broker';
+import { topicToAvroSchema } from '@typekafka/domain';
 import type { AppConfig } from './config.js';
 
 export interface BuildBrokerOptions {

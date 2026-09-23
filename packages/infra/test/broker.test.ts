@@ -5,7 +5,7 @@ import { loadConfig, type AppConfig } from '../src/config.js';
 const baseConfig: AppConfig = {
   driver: 'in-memory',
   brokers: ['kafka:9092'],
-  clientId: 'nodejs-kafka-demo',
+  clientId: 'typekafka-demo',
   memoryAutoCommit: true,
   consumerGroupId: 'notification-service',
   consumerFromBeginning: true,
@@ -48,7 +48,7 @@ describe('buildBrokerConfig', () => {
       clientIdSuffix: '-consumer',
       memoryAutoCommit: false,
     });
-    expect(cfg.connection.clientId).toBe('nodejs-kafka-demo-consumer');
+    expect(cfg.connection.clientId).toBe('typekafka-demo-consumer');
     expect(cfg.memoryAutoCommit).toBe(false);
   });
 

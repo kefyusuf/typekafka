@@ -1,5 +1,5 @@
 import type { Response } from 'express';
-import type { TelemetryEvent } from '@nodejs-kafka/domain';
+import type { TelemetryEvent } from '@typekafka/domain';
 
 export class SseHub {
   private clients = new Set<Response>();

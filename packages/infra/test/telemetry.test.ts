@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createBroker, type IMessageBroker } from '@nodejs-kafka/broker';
-import { TELEMETRY_TOPIC } from '@nodejs-kafka/domain';
+import { createBroker, type IMessageBroker } from '@typekafka/broker';
+import { TELEMETRY_TOPIC } from '@typekafka/domain';
 import { createLogger } from '../src/logger.js';
 import { createTelemetryClient } from '../src/telemetry.js';
 

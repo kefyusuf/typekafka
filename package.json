@@ -1,8 +1,8 @@
 {
-  "name": "nodejs-kafka",
+  "name": "typekafka",
   "version": "0.1.0",
   "private": true,
-  "description": "Type-safe Kafka demo - TypeScript + Node.js + adapter pattern",
+  "description": "typekafka — Type-safe Kafka messaging on Node.js & TypeScript: outbox, retry topic, DLQ, idempotent consumer, OTel traces",
   "license": "MIT",
   "type": "module",
   "engines": {

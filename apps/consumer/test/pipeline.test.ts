@@ -1,18 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { createBroker, type KafkaMessage } from '@nodejs-kafka/broker';
+import { createBroker, type KafkaMessage } from '@typekafka/broker';
 import {
   DLQ_TOPIC,
   TOPIC_ORDER_CREATED,
   createSampleOrder,
   parseEvent,
   type OrderCreated,
-} from '@nodejs-kafka/domain';
+} from '@typekafka/domain';
 import {
   createMetrics,
   DlqManager,
   TypedPublisher,
   type AppLogger,
-} from '@nodejs-kafka/infra';
+} from '@typekafka/infra';
 import type { Counter, Histogram } from 'prom-client';
 import { createHandlerRunner } from '../src/handler-runner.js';
 

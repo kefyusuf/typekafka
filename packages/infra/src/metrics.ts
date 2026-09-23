@@ -75,7 +75,7 @@ export async function startMetricsServer(
 
     if (credentials && !validateBasicCredentials(req.headers['authorization'], credentials)) {
       res.statusCode = 401;
-      res.setHeader('WWW-Authenticate', 'Basic realm="nodejs-kafka"');
+      res.setHeader('WWW-Authenticate', 'Basic realm="typekafka"');
       res.setHeader('Content-Type', 'text/plain');
       res.end('Unauthorized');
       return;

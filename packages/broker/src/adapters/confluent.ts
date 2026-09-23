@@ -28,7 +28,7 @@ type KafkaJSApi = typeof import('@confluentinc/kafka-javascript').KafkaJS;
 
 /**
  * Load the native Confluent client only when this adapter is actually used.
- * A dynamic import keeps `import { createBroker } from '@nodejs-kafka/broker'`
+ * A dynamic import keeps `import { createBroker } from '@typekafka/broker'`
  * free of the librdkafka binding (in-memory driver needs no native modules)
  * and still honors Vitest's `vi.mock('@confluentinc/kafka-javascript')`.
  */

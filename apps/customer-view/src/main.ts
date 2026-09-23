@@ -1,4 +1,4 @@
-import { createBroker, type IMessageBroker } from '@nodejs-kafka/broker';
+import { createBroker, type IMessageBroker } from '@typekafka/broker';
 import {
   CUSTOMER_TOPIC,
   applyOrder,
@@ -7,7 +7,7 @@ import {
   createSamplePayment,
   toCustomerUpdated,
   type CustomerUpdated,
-} from '@nodejs-kafka/domain';
+} from '@typekafka/domain';
 import {
   buildBrokerConfig,
   createLogger,
@@ -16,7 +16,7 @@ import {
   loadConfig,
   registerGracefulShutdown,
   type AppLogger,
-} from '@nodejs-kafka/infra';
+} from '@typekafka/infra';
 import { createCustomerViewServer } from './app.js';
 import { CustomerStore } from './customer-store.js';
 
