@@ -194,6 +194,8 @@ Node ≥ 22.13 (Docker / CI images resolve to the latest 22.x).
 
 Requirements: **Docker** (standard usage) or **Node.js 22+** (no-Docker path).
 
+> **Node versions** — developed and CI-tested on **Node 22**. Also verified locally on **Node 22–26**. If you switch Node major versions after `npm install`, rebuild the native Confluent binding with `npm rebuild @confluentinc/kafka-javascript` (or reinstall) so `NODE_MODULE_VERSION` matches.
+
 ### Standard usage — Docker stack
 
 ```bash
@@ -518,7 +520,7 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 
 ## Tests
 
-Vitest. The default `npm test` runs **151 unit tests with no Docker** — they use the in-memory driver, `node:sqlite` `:memory:` databases, and mocks. A separate Docker-gated integration suite (3 tests in `apps/consumer/test/integration`, run via `npm run test:integration`) exercises the full pipeline against a real Kafka container when Docker is available:
+Vitest. The default `npm test` runs **152 unit tests with no Docker** — they use the in-memory driver, `node:sqlite` `:memory:` databases, and mocks. A separate Docker-gated integration suite (3 tests in `apps/consumer/test/integration`, run via `npm run test:integration`) exercises the full pipeline against a real Kafka container when Docker is available:
 
 | Suite | File | Tests |
 |---|---|---|
@@ -545,7 +547,7 @@ Vitest. The default `npm test` runs **151 unit tests with no Docker** — they u
 | Web server | `apps/web/test/server.test.ts` | 7 |
 | Customer view (read model + HTTP) | `apps/customer-view/test/customer-view.test.ts` | 9 |
 
-CI (`.github/workflows/ci.yml`) runs `npm ci` → `build` → `typecheck` → `lint` → `test` on Node 22.
+CI (`.github/workflows/ci.yml`) runs `npm ci` → `build` → `typecheck` → `lint` → `test` on Node 22 (plus Docker-gated integration tests and compose-profile validation).
 
 ---
 
