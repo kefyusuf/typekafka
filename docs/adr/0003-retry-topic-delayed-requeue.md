@@ -98,5 +98,7 @@ the idempotency filter in ADR-0002. Park and schedule events are emitted as tele
   `records retry runner metrics when metrics are provided`.
 - `packages/infra/test/retry-topic.test.ts` — `nextDelayMs clamps and honors custom
   policy`, `isMaxRetries boundary`, `parseRetryHeaders defaults and values`,
-  `parkDelayMs past and future`, `schedule produces to orders.retry with headers`.
+  `parkDelayMs past and future`, `schedule produces to orders.retry with headers`,
+  `preserves original-topic across schedule, requeue, and reschedule` (the source
+  topic is authoritative on first scheduling, and retained on retry hops).
 - `packages/infra/test/dlq.test.ts` — `writes a dead-letter entry with diagnostics`.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createBroker, type KafkaMessage } from '@typekafka/broker';
+import { createBroker, type IMessageBroker, type KafkaMessage } from '@typekafka/broker';
 import { RETRY_TOPIC } from '@typekafka/domain';
 import { RetryTopicScheduler } from '../src/retry-topic.js';
 
@@ -126,5 +126,45 @@ describe('RetryTopicScheduler', () => {
     expect(await broker.listTopics()).toContain('orders.retry');
 
     await broker.disconnect();
+  });
+
+  it('preserves original-topic across schedule, requeue, and reschedule', async () => {
+    const published: Array<{ topic: string; headers?: Record<string, string | string[]> }> = [];
+    const broker = {
+      produce: async (
+        topic: string,
+        _value: unknown,
+        options?: { headers?: Record<string, string | string[]> },
+      ) => {
+        published.push({ topic, headers: options?.headers });
+        return { topic, partition: 0, offset: String(published.length - 1) };
+      },
+    } as unknown as IMessageBroker;
+    const scheduler = new RetryTopicScheduler(broker);
+
+    const source: KafkaMessage = {
+      topic: 'payments.completed',
+      key: 'ORD-00004',
+      value: { orderId: 'ORD-00004', type: 'payment.completed' },
+      // A source-provided header must not override the topic we actually consumed.
+      headers: { 'retry.original-topic': 'orders.created' },
+      partition: 0,
+      offset: '0',
+      timestamp: new Date().toISOString(),
+    };
+
+    await scheduler.schedule(source, new Error('first failure'), 0);
+    const parked = { ...source, topic: RETRY_TOPIC, headers: published[0]!.headers };
+    await scheduler.requeue(parked, 1, Date.now() + 1_000);
+    const redelivered = { ...parked, headers: published[1]!.headers };
+    await scheduler.schedule(redelivered, new Error('second failure'), 1);
+
+    expect(published.map((entry) => entry.topic)).toEqual([RETRY_TOPIC, RETRY_TOPIC, RETRY_TOPIC]);
+    expect(published.map((entry) => entry.headers?.['retry-count'])).toEqual(['1', '1', '2']);
+    expect(published.map((entry) => entry.headers?.['retry.original-topic'])).toEqual([
+      'payments.completed',
+      'payments.completed',
+      'payments.completed',
+    ]);
   });
 });
