@@ -115,7 +115,7 @@ export class RetryTopicScheduler {
       headers: {
         [RETRY_COUNT_HEADER]: String(retryCount),
         [NEXT_DELIVER_AT_HEADER]: nextDeliverAt,
-        [RETRY_ORIGINAL_TOPIC_HEADER]: message.topic,
+        [RETRY_ORIGINAL_TOPIC_HEADER]: this.parseOriginalTopic(message.headers) ?? message.topic,
       },
     });
   }
@@ -137,7 +137,7 @@ export class RetryTopicScheduler {
       headers: {
         [RETRY_COUNT_HEADER]: String(retryCount),
         [NEXT_DELIVER_AT_HEADER]: new Date(nextDeliverAtMs).toISOString(),
-        [RETRY_ORIGINAL_TOPIC_HEADER]: message.topic,
+        [RETRY_ORIGINAL_TOPIC_HEADER]: this.parseOriginalTopic(message.headers) ?? message.topic,
       },
     });
   }
