@@ -51,3 +51,26 @@ next build will ask, and a paused repo that is still green is evidence, not fail
 - If the deferred decision eventually lands on "own relay", that ADR must link back to this file and
   state which criterion above failed; otherwise this ADR stays correct and the package keeps its
   slot in the showcase.
+
+## Summary (EN)
+
+This package has no consumer outside its own repository, and "unused" is information, not a defect
+to hide. Rather than inventing a deployment or quietly archiving the repo, the reuse question is
+recorded here as a deferred decision with the criteria fixed now. If the next build's relay need
+matches what the port already offers, it consumes the package as a dependency; if it genuinely needs
+something else, that service writes its own ADR naming which criterion failed. Copying the relay code
+into the service is forbidden, because two copies drift and neither keeps the contract. The package
+stays green and unarchived, and its 152 unit tests remain the only proof a reader gets while no
+external consumer exists.
+
+## Verification
+
+No test holds a deferral. What is held by tests is the behaviour the future consumer would depend on:
+152 unit tests (see `README.md`, "Measured") — `packages/infra/test/outbox.test.ts`,
+`packages/infra/test/retry-topic.test.ts`, `packages/infra/test/idempotency.test.ts`,
+`packages/broker/test/propagation.test.ts` and the rest of the 26-file suite — plus the three
+Docker-gated integration tests in `apps/consumer/test/integration/real-kafka.test.ts`, which are the
+closest thing to a consumer until one exists. The check that belongs to this ADR is procedural: when
+the flagship's outbox relay is first written, its ADR must cite either the reuse or the
+own-relay condition from above.
+

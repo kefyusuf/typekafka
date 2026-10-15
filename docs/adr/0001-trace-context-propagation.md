@@ -61,3 +61,27 @@ Wiring:
 - The `traceparent` header is a public contract on the wire; changing the format
   would require a coordinated producer/consumer rollout (mitigated by strict
   parsing that simply returns `undefined` on malformed input).
+
+## Summary (EN)
+
+A trace that starts in an HTTP request stopped at the Kafka boundary, so a consumer failure
+could not be read in the context of the request that caused it. The decision is to
+propagate W3C `traceparent` headers inside the broker layer — `packages/broker/src/trace.ts`
+— rather than in application code, so every producer and consumer gets it for free.
+`injectTraceContext` writes the header on send, `extractParentContext` parses it with a
+strict regex, and `withSpan` parents the consumer span on the producer span. Both the
+Confluent and the in-memory driver run the same three functions, which is why the contract
+is exercised by the fast in-memory tests too. With no OTel SDK registered the functions
+return their input unchanged, so a deployment that does not trace pays nothing.
+
+## Verification
+
+- `packages/broker/test/propagation.test.ts` — `injects a well-formed traceparent and
+  reconstructs the parent context`, `is a no-op without an active span and rejects malformed
+  input`.
+- `packages/broker/test/tracing.test.ts` — `exports a produce span with messaging
+  attributes`, `exports a consume span around the handler invocation`, `marks a failing span
+  as error and records the exception`.
+- `packages/infra/test/tracing.test.ts` — `returns a noop tracing when the endpoint is empty
+  or whitespace`.
+

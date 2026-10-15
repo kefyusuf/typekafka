@@ -76,3 +76,27 @@ the in-place park:
   already neutralized by the idempotency filter (ADR-0002) keyed on `eventId`.
 - Tuning knobs: `REQUEUE_THROTTLE_MS` (per-hop cap) and the
   `RetryTopicPolicy` (`delaysMs`, `maxDeliveries`) in `retry-topic.ts`.
+
+## Summary (EN)
+
+Retrying a failed message by parking the consumer in place blocks the whole partition, and
+Kafka has no per-message delay primitive. The chosen strategy is delayed requeue: a retry
+message that arrives before its `next-deliver-at` is slept on for at most
+`REQUEUE_THROTTLE_MS` (1s), re-published onto `orders.retry` with the same retry-count and
+delivery time, then committed — so the partition is freed instead of held. `requeue`
+deliberately does not escalate the counter or advance the schedule; only a real processing
+failure does, which keeps the backoff ladder honest. The cost is one extra copy of the
+message per hop and duplicate deliveries inside the throttle window, both neutralized by
+the idempotency filter in ADR-0002. Park and schedule events are emitted as telemetry
+(`retry-parked`, `retry-scheduled`) so the ladder is observable rather than inferred.
+
+## Verification
+
+- `apps/consumer/test/retry-topic.test.ts` — `processes a due retry message`, `re-queues a
+  not-yet-due retry message and processes it once due`, `re-schedules an exhausted retry
+  message still under max deliveries`, `dead-letters a retry message at max deliveries`,
+  `records retry runner metrics when metrics are provided`.
+- `packages/infra/test/retry-topic.test.ts` — `nextDelayMs clamps and honors custom
+  policy`, `isMaxRetries boundary`, `parseRetryHeaders defaults and values`,
+  `parkDelayMs past and future`, `schedule produces to orders.retry with headers`.
+- `packages/infra/test/dlq.test.ts` — `writes a dead-letter entry with diagnostics`.

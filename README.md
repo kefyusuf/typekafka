@@ -21,7 +21,7 @@ This repo is a portfolio / reference project: type-safe, event-driven engineerin
 - **Multi-cluster / MirrorMaker 2** — an optional `mirror` compose profile with a second single-node KRaft cluster (`kafka-b`) and a **MirrorMaker 2** worker replicating `orders.*` (`orders.created`, `orders.payment.*`, `orders.dlq`) from the primary cluster, visible as a second `mirror` cluster in Kafka UI.
 - **Security** — an optional `security` compose profile with a **SASL_SSL**-secured KRaft cluster (`kafka-secured`, PLAIN auth: `admin` super user + `app`) guarded by **topic-scoped ACLs**; self-signed certs are generated inside the container, and the confluent driver auto-selects `security.protocol` from `BROKER_SASL_*` / `BROKER_SSL_*` env vars — no app code changes.
 
-**Status:** the last commit here is 23 September 2026 and the CI run from that push is green — a finished reference package, not an active build. What it does not have yet is a real consumer app depending on it; see [Where this goes next](#where-this-goes-next).
+**Status:** the last code change here is 23 September 2026; since then only docs and ADRs have moved (15 October 2026), and the CI run from that push is green. `npx vitest run` on 2026-10-15: **152 passed** across 25 files, with the Docker-gated integration file skipped when Docker is unavailable — a finished reference package, not an active build. What it does not have yet is a real consumer app depending on it; see [Where this goes next](#where-this-goes-next).
 
 ---
 

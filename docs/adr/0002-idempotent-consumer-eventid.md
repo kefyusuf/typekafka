@@ -68,3 +68,26 @@ instance across a consumer "restart" to prove reprocessing is suppressed.
 - Memory is bounded by `maxSize`; under heavy throughput with a long-lived
   instance, a TTL (`ttlMs`) can be set to trade some replay protection for lower
   footprint.
+
+## Summary (EN)
+
+Kafka delivers at-least-once, so a consumer that mutates state can run twice for one
+logical event. The deduplication key is the event's own `eventId`, carried in every domain
+schema, because a Kafka offset is per-partition and useless for dedupe. One in-process
+LRU filter (`createIdempotencyFilter`, 100k entries by default, optional TTL) wraps both
+the main handler runner and the retry-topic runner. `mark()` only runs on the success
+path, so a genuine transient retry is never suppressed and only a redelivery of an
+already-completed event is skipped. The store is instance-local, so a restart relies on
+committed offsets; durable cross-restart dedup would need a unique `eventId` constraint or
+a shared store, and that limit is written here rather than hidden.
+
+## Verification
+
+- `packages/infra/test/idempotency.test.ts` — `reports an unseen eventId as not duplicate`,
+  `reports a marked eventId as duplicate until evicted`, `evicts the oldest entry beyond
+  maxSize (LRU bound)`, `treats entries older than ttlMs as unseen`.
+- `apps/consumer/test/integration/real-kafka.test.ts` (Docker-gated) — `end-to-end happy
+  path: consumes orders.created exactly once and idempotency suppresses a redelivered
+  duplicate`, `relay/consumer restart idempotency: already-processed events are not
+  reprocessed after reconnect`.
+

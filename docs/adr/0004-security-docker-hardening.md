@@ -87,3 +87,32 @@ Wiring (keep the health probe unauthenticated so orchestrators can still probe):
   placeholders, and the secured broker's root entrypoint is a provisioning
   convenience to be replaced by a pre-provisioned keystore + non-root user in
   production. These are explicitly called out as demo-only in the compose file.
+
+## Summary (EN)
+
+Demo stacks normally run containers as root with full capabilities, and a learning
+repository that copies the pattern teaches the wrong defaults. Every app image builds a
+multi-stage `node:22-alpine` image, creates an `appuser`, chowns `/app` to it and switches
+`USER appuser`, while `docker-compose.yml` adds `read_only` with a `tmpfs` for the writable
+paths, `cap_drop: ["ALL"]`, `no-new-privileges` and per-service CPU/memory limits. Two
+exceptions are documented in the compose file rather than tidied away: the kafka broker
+keeps a writable root filesystem, and the secured broker writes its keystore as root once
+before dropping to `appuser`. Healthchecks gate `depends_on`, so a dependent cannot start
+against an unready broker. The second half of the decision is optional HTTP basic-auth in
+`packages/infra/src/http-auth.ts`: env-gated, compared with `timingSafeEqual`, off unless
+credentials are configured.
+
+## Verification
+
+- `packages/infra/test/http-auth.test.ts` — `passes through when no credentials are
+  configured`, `returns 401 with a WWW-Authenticate challenge when the header is missing`,
+  `returns 200 for a valid Authorization header`, `returns 401 for a wrong password`,
+  `returns 401 for a wrong username`.
+- **The container flags are held by no test.** `read_only`, `cap_drop`,
+  `no-new-privileges`, the resource limits and the `USER appuser` lines live in
+  `docker-compose.yml` and the four `apps/*/Dockerfile` files. The only Docker-aware suite,
+  `apps/consumer/test/integration/real-kafka.test.ts`, is gated by
+  `describe.skipIf(!dockerAvailable)` and asserts behaviour, not security options. A
+  compose-lint or `docker inspect` assertion is the honest next step and is not written yet
+  — which is why this ADR is Accepted for the code decision and open for its automation.
+
