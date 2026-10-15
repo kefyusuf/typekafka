@@ -528,7 +528,7 @@ Vitest. The default `npm test` runs **153 unit tests with no Docker** — they u
 | Suite | File | Tests |
 |---|---|---|
 | Retry behavior | `packages/infra/test/retry.test.ts` | 4 |
-| Retry topic scheduler | `packages/infra/test/retry-topic.test.ts` | 6 |
+| Retry topic scheduler | `packages/infra/test/retry-topic.test.ts` | 7 |
 | Outbox store + relay | `packages/infra/test/outbox.test.ts` | 10 |
 | Event schemas | `packages/domain/test/schemas.test.ts` | 6 |
 | Customer changelog (aggregation) | `packages/domain/test/customer.test.ts` | 6 |
@@ -546,7 +546,7 @@ Vitest. The default `npm test` runs **153 unit tests with no Docker** — they u
 | Publisher | `packages/infra/test/publisher.test.ts` | 2 |
 | Dead-letter queue | `packages/infra/test/dlq.test.ts` | 1 |
 | Consumer pipeline | `apps/consumer/test/pipeline.test.ts` | 4 |
-| Retry topic pipeline | `apps/consumer/test/retry-topic.test.ts` | 6 |
+| Retry topic pipeline | `apps/consumer/test/retry-topic.test.ts` | 7 |
 | Web server | `apps/web/test/server.test.ts` | 7 |
 | Customer view (read model + HTTP) | `apps/customer-view/test/customer-view.test.ts` | 9 |
 
