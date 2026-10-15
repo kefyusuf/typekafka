@@ -127,6 +127,7 @@ describe('RetryTopicScheduler', () => {
 
     await broker.disconnect();
   });
+
   it('preserves original-topic across schedule, requeue, and reschedule', async () => {
     const published: Array<{ topic: string; headers?: Record<string, string | string[]> }> = [];
     const broker = {
@@ -145,6 +146,8 @@ describe('RetryTopicScheduler', () => {
       topic: 'payments.completed',
       key: 'ORD-00004',
       value: { orderId: 'ORD-00004', type: 'payment.completed' },
+      // A source-provided header must not override the topic we actually consumed.
+      headers: { 'retry.original-topic': 'orders.created' },
       partition: 0,
       offset: '0',
       timestamp: new Date().toISOString(),
@@ -164,5 +167,4 @@ describe('RetryTopicScheduler', () => {
       'payments.completed',
     ]);
   });
-
 });
