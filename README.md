@@ -10,7 +10,7 @@ This repo is a portfolio / reference project: type-safe, event-driven engineerin
 
 - A broker **port** (`IMessageBroker`) with **two swappable adapters** — an in-memory broker (zero deps) and a real Kafka driver (Confluent).
 - **End-to-end type safety**: Zod schemas bound to topics at compile time, validated at runtime before the broker ever sees a message.
-- A production-shaped **consumer pipeline**: `parse → retry (in-process backoff + jitter) → retry topic (escalating delay) → DLQ → commit` (confluent driver); in-memory keeps in-process retry → DLQ.
+- A **consumer pipeline**: `parse → retry (in-process backoff + jitter) → retry topic (escalating delay) → DLQ → commit` (confluent driver); in-memory keeps in-process retry → DLQ.
 - A **transactional outbox** in the web app — `POST /api/orders` writes the order + outbox rows to a local **SQLite** file in one transaction (`node:sqlite`, built into Node 22, zero native deps); an outbox relay publishes committed rows to Kafka **transactionally**, and consumers run with `read_committed` (confluent driver).
 - **Graceful shutdown**, **structured JSON logging** (pino), **fail-fast env validation**, and a CI pipeline.
 - A full **Docker Compose** stack with a **KRaft-mode Kafka** (no ZooKeeper) and **Kafka UI**.
