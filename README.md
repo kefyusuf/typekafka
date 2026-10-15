@@ -574,3 +574,5 @@ CI (`.github/workflows/ci.yml`) runs `npm ci` → `build` → `typecheck` → `l
 The open decision is not whether this package works — 152 unit tests and a green CI answer that. It is whether the next build (the retail copilot this plan points everything at) consumes this broker port and outbox relay as a dependency, or writes its own relay because its delivery guarantees differ.
 
 Whichever way that goes, it gets an ADR before any code moves: reuse is proof of the "don't write the same thing twice" discipline, and a deliberate own-relay decision is proof of knowing when a package does not fit. Until then this repo is the reference implementation, and the gap above — no external consumer — is its actual status, not a missing feature.
+
+The criteria for that decision are already written: [ADR-0005](docs/adr/0005-consumer-deferred-with-criteria.md). The five recorded design decisions for this repo live in [docs/adr/](docs/adr/) — trace propagation, idempotent consumption by `eventId`, retry-topic delayed requeue, Docker security hardening, and the deferred-reuse decision.

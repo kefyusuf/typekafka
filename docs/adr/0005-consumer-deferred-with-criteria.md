@@ -1,0 +1,53 @@
+# ADR-0005: Reuse of this package by the next build is deferred, with the criteria fixed now
+
+- Status: Accepted
+- Date: 2026-10-15
+
+## Context
+
+This repo produces a broker port (`IMessageBroker`), two drivers, a consumer pipeline
+(`parse → retry → retry topic → DLQ → commit`) and a transactional outbox with a relay. Every
+piece of it was built to be consumed by a service, and every piece is exercised — 152 unit tests
+plus 3 Docker-gated integration tests. What no piece has is an external consumer: development
+paused on 2026-09-23 and nothing outside this repository imports it.
+
+That gap is the kind that gets papered over. The tempting follow-ups were a demo consumer written
+in-repo to make the README claim a "system", or an unprompted rewrite of the relay in the next
+project because nobody re-read this code. Both would destroy the only signal this repo carries:
+that the delivery semantics here were chosen deliberately, and can be defended.
+
+The next build in this plan is a retail copilot whose money path produces events (order accepted,
+payment captured, reconciliation deltas). Whether it consumes this package or writes its own relay
+has to be decided when that service exists, because the inputs of the decision — tenancy model,
+transaction boundary, delivery guarantee — live there, not here.
+
+## Decision
+
+Defer the reuse decision to that service's own ADR set, and fix the deciding criteria here now, so
+the future ADR is a comparison rather than a mood:
+
+- **Reuse this package** when the consumer needs at-least-once delivery with an outbox, a
+  per-event idempotency filter and escalating retry topics — i.e. the semantics implemented here —
+  and runs on Node ≥ 22 with the confluent driver. In that case the package is a dependency, added
+  through the port, and the service contributes only its event schemas and handlers.
+- **Write a separate relay** only if the service's transaction boundary cannot be a local SQLite
+  write (ADR-level requirement: a named datastore and a named commit point), or if its delivery
+  guarantee must be exactly-once at the broker rather than idempotency-filtered at-least-once. The
+  ADR that makes that call must cite which of the two conditions failed.
+- **Never** copy the relay code into the service. Fork-by-copy would strand both copies.
+
+This repo stays a reference implementation with its test suite as the contract. It is not archived:
+the port, the retry-topic pattern and the outbox relay are the documented answer to questions the
+next build will ask, and a paused repo that is still green is evidence, not failure.
+
+## Consequences
+
+- The README's status line can say what is true ("no external consumer yet") instead of implying a
+  deployment that never happened.
+- The reuse decision is made once, in the service that owns the requirement, against criteria
+  written down before anyone had a preference.
+- Cost: while no consumer exercises the package across a repository boundary, API friction in the
+  port will only surface in tests. Acceptable — the port is three methods and one options object.
+- If the deferred decision eventually lands on "own relay", that ADR must link back to this file and
+  state which criterion above failed; otherwise this ADR stays correct and the package keeps its
+  slot in the showcase.
