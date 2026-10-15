@@ -6,7 +6,7 @@
 
 Type-safe **Kafka messaging on Node.js** — built with **TypeScript**, **Zod**, and a plug-and-play **Ports & Adapters** architecture.
 
-This repo is a portfolio / reference project: type-safe, event-driven engineering in TypeScript + Node.js + Kafka, gated by **152 unit tests** (no Docker) and **3 Docker-gated integration tests** — see [Tests](#tests). Not just a "produce a message" snippet. It covers:
+This is a reference implementation of type-safe, event-driven messaging on TypeScript + Node.js + Kafka, gated by **152 unit tests** (no Docker) and **3 Docker-gated integration tests** — see [Tests](#tests). It covers:
 
 - A broker **port** (`IMessageBroker`) with **two swappable adapters** — an in-memory broker (zero deps) and a real Kafka driver (Confluent).
 - **End-to-end type safety**: Zod schemas bound to topics at compile time, validated at runtime before the broker ever sees a message.
