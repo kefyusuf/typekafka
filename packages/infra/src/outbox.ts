@@ -171,10 +171,15 @@ export class OutboxRelay {
         const result = tx
           ? await tx.produce(row.topic, row.payload, { key: row.key })
           : await this.broker.produce(row.topic, row.payload, { key: row.key });
-        published.push({ row, result });
-        // Non-transactional sends are durable individually, but transactional
-        // sends must not be remembered until the entire batch commits.
-        if (!tx) this.publishedIds.add(row.id);
+        if (tx) {
+          published.push({ row, result });
+        } else {
+          // Each non-transactional send is acknowledged independently: persist
+          // its outcome before attempting the next row in the batch.
+          this.publishedIds.add(row.id);
+          this.store.markPublished([row.id]);
+          await this.onPublished?.({ row, result });
+        }
       }
 
       // Commit the Kafka transaction first, then mark rows published in SQLite.
@@ -185,11 +190,10 @@ export class OutboxRelay {
       if (tx) {
         await tx.commit();
         for (const row of rows) this.publishedIds.add(row.id);
-      }
-      this.store.markPublished(rows.map((r) => r.id));
-
-      for (const p of published) {
-        await this.onPublished?.(p);
+        this.store.markPublished(rows.map((r) => r.id));
+        for (const p of published) {
+          await this.onPublished?.(p);
+        }
       }
       return rows.length;
     } catch (err) {
