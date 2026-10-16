@@ -99,10 +99,8 @@ export async function runHandlerWithRetry<T>({
 }
 
 /**
- * Write a message to the DLQ, tolerating a DLQ-produce failure. A failing
- * `deadLetter` must NOT block the offset commit, otherwise a poison message
- * is redelivered forever and wedges its partition. On DLQ failure we still
- * commit so the message leaves the consumer and is not redelivered.
+ * Write a message to the DLQ. If publishing fails, surface the error so the
+ * consuming runner does not commit the source offset without a DLQ record.
  */
 export async function safeDeadLetter(
   dlq: DlqManager,
@@ -121,7 +119,8 @@ export async function safeDeadLetter(
         offset: message.offset,
         err: dlqErr,
       },
-      'dead-letter write failed; committing to avoid infinite redelivery of a poison message',
+      'dead-letter write failed; leaving source offset uncommitted',
     );
+    throw dlqErr;
   }
 }
