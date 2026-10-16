@@ -356,4 +356,48 @@ describe('OutboxRelay', () => {
 
     await broker.disconnect();
   });
+  it('persists acknowledged rows when a later non-transactional send fails', async () => {
+    const db = new DatabaseSync(':memory:');
+    try {
+      const store = new OutboxStore(db);
+      store.insertPending({ topic: 'orders.created', payload: { n: 1 } });
+      store.insertPending({ topic: 'payments.completed', payload: { n: 2 } });
+
+      const produced: string[] = [];
+      const publishedEvents: string[] = [];
+      let failPaymentOnce = true;
+      const broker = {
+        produce: async (topic: string): Promise<ProduceResult> => {
+          produced.push(topic);
+          if (topic === 'payments.completed' && failPaymentOnce) {
+            failPaymentOnce = false;
+            throw new Error('temporary broker failure');
+          }
+          return { topic, partition: 0, offset: String(produced.length) };
+        },
+      } as IMessageBroker;
+
+      const relay = new OutboxRelay({
+        broker,
+        store,
+        logger,
+        transactional: false,
+        onPublished: ({ row }) => { publishedEvents.push(row.topic); },
+      });
+
+      expect(await relay.runOnce()).toBe(0);
+      // The first send was acknowledged; the failed second send is the only
+      // row that should remain pending for the next poll.
+      expect(store.peekPending().map((row) => row.topic)).toEqual(['payments.completed']);
+      expect(publishedEvents).toEqual(['orders.created']);
+
+      expect(await relay.runOnce()).toBe(1);
+      expect(produced).toEqual(['orders.created', 'payments.completed', 'payments.completed']);
+      expect(publishedEvents).toEqual(['orders.created', 'payments.completed']);
+      expect(store.countPending()).toBe(0);
+    } finally {
+      db.close();
+    }
+  });
+
 });
