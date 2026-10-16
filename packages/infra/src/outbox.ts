@@ -172,7 +172,9 @@ export class OutboxRelay {
           ? await tx.produce(row.topic, row.payload, { key: row.key })
           : await this.broker.produce(row.topic, row.payload, { key: row.key });
         published.push({ row, result });
-        this.publishedIds.add(row.id);
+        // Non-transactional sends are durable individually, but transactional
+        // sends must not be remembered until the entire batch commits.
+        if (!tx) this.publishedIds.add(row.id);
       }
 
       // Commit the Kafka transaction first, then mark rows published in SQLite.
@@ -180,7 +182,10 @@ export class OutboxRelay {
       // pending and it is re-published on the next poll (never dropped). Making
       // this exactly-once would require consumer-side idempotency on `eventId`,
       // which is intentionally out of scope for the demo.
-      if (tx) await tx.commit();
+      if (tx) {
+        await tx.commit();
+        for (const row of rows) this.publishedIds.add(row.id);
+      }
       this.store.markPublished(rows.map((r) => r.id));
 
       for (const p of published) {
