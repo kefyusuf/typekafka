@@ -1,6 +1,6 @@
 # Learning path
 
-A staged route through the `typekafka` repo, from Kafka concepts to the reliability patterns this codebase demonstrates. Work the stages in order — each one builds on the previous. This page is the anchor that the Phase 2 and Phase 3 guide docs link back to.
+A staged route through the `typekafka` repo, from Kafka concepts to the reliability patterns this codebase demonstrates. Work the stages in order — each one builds on the previous. This page links to the implemented examples and the guides available in this repository.
 
 ## Stage 0 — Concepts
 
@@ -33,20 +33,20 @@ Now read the code that made the demo work, in this order — each file is the de
 
 ## Stage 3 — Patterns
 
-The reliability patterns this repo demonstrates, in the order a learner should approach them. The guides below land in Phase 2; the paths are placeholders to fill in then:
+The reliability patterns this repo demonstrates, in the order a learner should approach them. Start with the existing README explanations, then follow the dedicated guides:
 
-1. `docs/guides/retry-topics.md` (Phase 2) — moving retries out of the process and into Kafka, replacing the in-process backoff you saw in Stage 1.
-2. `docs/guides/outbox.md` (Phase 2) — the transactional outbox, which atomically records local data and pending events; its Kafka relay publishes at least once, so duplicate events remain possible.
-3. `docs/guides/schema-registry.md` (Phase 2) — Schema Registry + Avro for schema evolution.
-4. `docs/guides/compacted-topics.md` (Phase 2) — key-based compaction for reference data and the customer-360 view.
+1. [Retry topics and delayed requeue](../README.md#consumer-pipeline) — the Confluent pipeline escalates exhausted in-process retries to a Kafka retry topic with scheduled redelivery.
+2. [Transactional outbox](../README.md#web-producer--transactional-outbox) — local data and pending events are recorded atomically; the Kafka relay publishes at least once, so duplicate events remain possible.
+3. [Schema Registry + Avro](./guides/schema-registry.md) — schema evolution for serialized events.
+4. [Compacted topics](./guides/compacted-topics.md) — key-based compaction and the customer-360 view.
 
 ## Stage 4 — Platform
 
-Operational concerns for running a Kafka system in production. Guides land in Phase 3:
+Operational capabilities demonstrated by optional local Docker Compose profiles, not production deployment validation:
 
-1. `docs/guides/observability.md` (Phase 3) — OpenTelemetry tracing and metrics across the pipeline.
-2. `docs/guides/multi-cluster.md` (Phase 3) — MirrorMaker 2 and multi-cluster topologies.
-3. `docs/guides/security.md` (Phase 3) — SASL, TLS and ACLs.
+1. [Observability](./guides/observability.md) — OpenTelemetry tracing and metrics across the pipeline.
+2. [Multi-cluster mirroring](./guides/multi-cluster-mirroring.md) — MirrorMaker 2 and multi-cluster topologies.
+3. [Security](./guides/security.md) — SASL, TLS and ACLs.
 
 ## Keeping it real
 
