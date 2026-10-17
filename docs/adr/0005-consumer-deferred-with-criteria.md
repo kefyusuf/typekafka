@@ -67,7 +67,7 @@ while no external consumer exists. The suite had 152 unit tests when this ADR wa
 ## Verification
 
 No test holds a deferral. At acceptance, verification evidence comprised 152 unit tests across
-26 files, including `packages/infra/test/outbox.test.ts`,
+25 files ([CI run #38712438308](https://github.com/kefyusuf/typekafka/actions/runs/38712438308)), including `packages/infra/test/outbox.test.ts`,
 `packages/infra/test/retry-topic.test.ts`, `packages/infra/test/idempotency.test.ts`, and
 `packages/broker/test/propagation.test.ts`, plus three Docker-gated integration tests in
 `apps/consumer/test/integration/real-kafka.test.ts`. The latest verified `main` CI at the time
