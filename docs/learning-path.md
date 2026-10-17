@@ -27,7 +27,7 @@ Now read the code that made the demo work, in this order — each file is the de
 1. `packages/broker/src/port.ts` — the `IMessageBroker` interface: the single seam everything talks to, and the contract both drivers implement.
 2. `packages/broker/src/factory.ts` — `createBroker()`: how `BROKER_DRIVER` picks an adapter behind the port.
 3. `packages/broker/src/adapters/in-memory.ts` — the zero-dependency `EventEmitter` broker that emulates topics, partitions and offsets so the same app code runs without Kafka.
-4. `apps/consumer/src/handler-runner.ts` — `createHandlerRunner`: the production pipeline `parse → retry → DLQ → commit`.
+4. `apps/consumer/src/handler-runner.ts` — `createHandlerRunner`: the consumer pipeline `parse → retry → DLQ → commit`.
 5. `packages/infra/src/dlq.ts` — `DlqManager`: how failed messages become `DlqEntry` records on `orders.dlq` instead of being silently dropped.
 6. `packages/infra/src/publisher.ts` — `TypedPublisher`: compile-time topic-to-schema binding plus runtime validation, so the broker never sees an invalid envelope.
 
@@ -36,7 +36,7 @@ Now read the code that made the demo work, in this order — each file is the de
 The reliability patterns this repo demonstrates, in the order a learner should approach them. The guides below land in Phase 2; the paths are placeholders to fill in then:
 
 1. `docs/guides/retry-topics.md` (Phase 2) — moving retries out of the process and into Kafka, replacing the in-process backoff you saw in Stage 1.
-2. `docs/guides/outbox.md` (Phase 2) — the transactional outbox, so writes and events are committed together for exactly-once publishing.
+2. `docs/guides/outbox.md` (Phase 2) — the transactional outbox, which atomically records local data and pending events; its Kafka relay publishes at least once, so duplicate events remain possible.
 3. `docs/guides/schema-registry.md` (Phase 2) — Schema Registry + Avro for schema evolution.
 4. `docs/guides/compacted-topics.md` (Phase 2) — key-based compaction for reference data and the customer-360 view.
 
@@ -50,4 +50,4 @@ Operational concerns for running a Kafka system in production. Guides land in Ph
 
 ## Keeping it real
 
-Every pattern in this repo is implemented to production depth — idempotent producer, manual offset commit, retry with exponential backoff + jitter, DLQ with diagnostics, graceful shutdown — but it all runs locally, and most of it works against the in-memory driver alone. Only the driver-dependent capabilities (retry topics, transactions/outbox, Schema Registry, compacted topics, multi-cluster, SASL/TLS/ACL) need a real Kafka. Check the capability matrix in the [driver-switching guide](./guides/driver-switching.md) to see which capabilities require the Confluent driver and which the in-memory driver only simulates.
+This repository demonstrates an idempotent producer, manual offset commits, exponential-backoff retries, DLQ diagnostics and graceful shutdown under automated tests; it is a reference implementation, not a production-validated service. Most non-Kafka-specific flows also run with the in-memory driver. Only the driver-dependent capabilities (retry topics, transactions/outbox, Schema Registry, compacted topics, multi-cluster, SASL/TLS/ACL) need a real Kafka. Check the capability matrix in the [driver-switching guide](./guides/driver-switching.md) to see which capabilities require the Confluent driver and which the in-memory driver only simulates.
