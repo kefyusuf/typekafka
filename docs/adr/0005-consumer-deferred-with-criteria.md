@@ -7,8 +7,8 @@
 
 This repo produces a broker port (`IMessageBroker`), two drivers, a consumer pipeline
 (`parse → retry → retry topic → DLQ → commit`) and a transactional outbox with a relay. Every
-piece of it was built to be consumed by a service, and every piece is exercised — 152 unit tests
-plus 3 Docker-gated integration tests. What no piece has is an external consumer: development
+piece of it was built to be consumed by a service, and every piece was exercised by 152 unit tests
+plus 3 Docker-gated integration tests when this decision was accepted. What no piece has is an external consumer: development
 paused on 2026-09-23 and nothing outside this repository imports it.
 
 That gap is the kind that gets papered over. The tempting follow-ups were a demo consumer written
@@ -47,7 +47,8 @@ next build will ask, and a paused repo that is still green is evidence, not fail
 - The reuse decision is made once, in the service that owns the requirement, against criteria
   written down before anyone had a preference.
 - Cost: while no consumer exercises the package across a repository boundary, API friction in the
-  port will only surface in tests. Acceptable — the port is three methods and one options object.
+  broker port remains unverified outside this repo. The port includes connection and topic
+  management, publishing, consumption, and transactions; its fit must be checked by the consumer.
 - If the deferred decision eventually lands on "own relay", that ADR must link back to this file and
   state which criterion above failed; otherwise this ADR stays correct and the package keeps its
   slot in the showcase.
@@ -60,17 +61,19 @@ recorded here as a deferred decision with the criteria fixed now. If the next bu
 matches what the port already offers, it consumes the package as a dependency; if it genuinely needs
 something else, that service writes its own ADR naming which criterion failed. Copying the relay code
 into the service is forbidden, because two copies drift and neither keeps the contract. The package
-stays green and unarchived, and its 152 unit tests remain the only proof a reader gets while no
-external consumer exists.
+stays green and unarchived, and its automated tests remain the available verification evidence
+while no external consumer exists. The suite had 152 unit tests when this ADR was accepted.
 
 ## Verification
 
-No test holds a deferral. What is held by tests is the behaviour the future consumer would depend on:
-152 unit tests (see `README.md`, "Measured") — `packages/infra/test/outbox.test.ts`,
-`packages/infra/test/retry-topic.test.ts`, `packages/infra/test/idempotency.test.ts`,
-`packages/broker/test/propagation.test.ts` and the rest of the 26-file suite — plus the three
-Docker-gated integration tests in `apps/consumer/test/integration/real-kafka.test.ts`, which are the
-closest thing to a consumer until one exists. The check that belongs to this ADR is procedural: when
-the flagship's outbox relay is first written, its ADR must cite either the reuse or the
-own-relay condition from above.
+No test holds a deferral. At acceptance, verification evidence comprised 152 unit tests across
+25 files ([CI run #38712438308](https://github.com/kefyusuf/typekafka/actions/runs/38712438308)), including `packages/infra/test/outbox.test.ts`,
+`packages/infra/test/retry-topic.test.ts`, `packages/infra/test/idempotency.test.ts`, and
+`packages/broker/test/propagation.test.ts`, plus three Docker-gated integration tests in
+`apps/consumer/test/integration/real-kafka.test.ts`. The latest verified `main` CI at the time
+of this clarification ([run #39078357391](https://github.com/kefyusuf/typekafka/actions/runs/39078357391))
+passed 160 unit tests across 27 files and 3 Kafka integration tests. These counts are evidence
+snapshots, not permanent contract values; consult current CI for later changes. The check that
+belongs to this ADR is procedural: when the flagship's outbox relay is first written, its ADR
+must cite either the reuse or the own-relay condition from above.
 
