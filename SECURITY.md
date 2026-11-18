@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Do **not** open a public issue for a security vulnerability. Please report it privately to [security contact — to be filled when a public channel exists].
+Do **not** open a public issue for a security vulnerability. Report it privately through GitHub's [private vulnerability reporting](https://github.com/kefyusuf/typekafka/security/advisories/new) ("Security" tab → "Report a vulnerability").
 
 You can expect:
 
