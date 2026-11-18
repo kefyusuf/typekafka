@@ -59,9 +59,9 @@ async function main(): Promise<void> {
       try {
         store.apply(message);
       } finally {
-        metrics.handlerDurationMs
+        metrics.handlerDurationSeconds
           .labels({ topic: message.topic })
-          .observe(performance.now() - startedAt);
+          .observe((performance.now() - startedAt) / 1000);
       }
       logger.debug(
         { customerId: message.key, value: message.value },

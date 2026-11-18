@@ -284,7 +284,7 @@ describe('consumer retry topic pipeline (delayed-requeue -> parse -> retry -> sc
     // At max deliveries (retry-count 2) the message dead-letters.
     expect(await counterValue(metrics.dlqTotal, RETRY_TOPIC)).toBe(1);
     // The handler is invoked once per attempt (2).
-    expect(await handlerObservations(metrics.handlerDurationMs, RETRY_TOPIC)).toBe(2);
+    expect(await handlerObservations(metrics.handlerDurationSeconds, RETRY_TOPIC)).toBe(2);
 
     await broker.disconnect();
   });

@@ -4,13 +4,13 @@ import { Counter, Histogram, Registry } from 'prom-client';
 import { validateBasicCredentials } from './http-auth.js';
 
 const LABEL_NAMES = ['topic'] as const;
-const HANDLER_DURATION_BUCKETS = [1, 5, 10, 25, 50, 100, 250, 500, 1000];
+const HANDLER_DURATION_BUCKETS = [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1];
 
 export interface AppMetrics {
   registry: Registry;
   messagesProduced: Counter<string>;
   messagesConsumed: Counter<string>;
-  handlerDurationMs: Histogram<string>;
+  handlerDurationSeconds: Histogram<string>;
   retriesTotal: Counter<string>;
   dlqTotal: Counter<string>;
   idempotencySkipped: Counter<string>;
@@ -33,9 +33,9 @@ export function createMetrics(): AppMetrics {
       'nodejs_kafka_messages_consumed_total',
       'Total number of messages consumed',
     ),
-    handlerDurationMs: new Histogram({
-      name: 'nodejs_kafka_handler_duration_ms',
-      help: 'Duration of message handler execution in milliseconds',
+    handlerDurationSeconds: new Histogram({
+      name: 'nodejs_kafka_handler_duration_seconds',
+      help: 'Duration of message handler execution in seconds',
       labelNames: LABEL_NAMES,
       buckets: HANDLER_DURATION_BUCKETS,
       registers: [registry],
