@@ -5,7 +5,7 @@ import { withRetry } from '@typekafka/infra';
 
 export interface ConsumerMetrics {
   messagesConsumed: Counter<string>;
-  handlerDurationMs: Histogram<string>;
+  handlerDurationSeconds: Histogram<string>;
   retriesTotal: Counter<string>;
   dlqTotal: Counter<string>;
   idempotencySkipped: Counter<string>;
@@ -64,9 +64,9 @@ export async function runHandlerWithRetry<T>({
       try {
         return await handler();
       } finally {
-        metrics?.handlerDurationMs
+        metrics?.handlerDurationSeconds
           .labels({ topic: message.topic })
-          .observe(performance.now() - startedAt);
+          .observe((performance.now() - startedAt) / 1000);
       }
     },
     { attempts, baseDelayMs },
