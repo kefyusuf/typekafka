@@ -68,7 +68,7 @@ describe('OutboxStore', () => {
     expect(batch.map((r) => r.id)).toEqual([1, 2]);
   });
 
-  it('peekPending skips a corrupt payload row without throwing', () => {
+  it('peekPending quarantines a corrupt payload row instead of leaving it pending', () => {
     const db = new DatabaseSync(':memory:');
     const store = new OutboxStore(db);
     db.prepare(
@@ -79,7 +79,36 @@ describe('OutboxStore', () => {
     const rows = store.peekPending();
     expect(rows).toHaveLength(1);
     expect(rows[0]!.topic).toBe('payments.completed');
-    expect(store.countPending()).toBe(2);
+    expect(store.countPending()).toBe(1);
+
+    const failed = store.peekFailed();
+    expect(failed).toHaveLength(1);
+    expect(failed[0]!.topic).toBe('orders.created');
+    expect(failed[0]!.rawPayload).toBe('{ not json');
+    expect(Number.isNaN(Date.parse(failed[0]!.failedAt))).toBe(false);
+    db.close();
+  });
+
+  it('reopening an existing database migrates the failed_at column', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec(`
+      CREATE TABLE outbox (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        topic TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        key TEXT,
+        created_at TEXT NOT NULL,
+        published_at TEXT
+      );
+    `);
+    db.prepare(
+      'INSERT INTO outbox (topic, payload, key, created_at) VALUES (?, ?, ?, ?)',
+    ).run('orders.created', '{ not json', 'BAD', new Date().toISOString());
+
+    const store = new OutboxStore(db);
+    expect(store.peekPending()).toHaveLength(0);
+    expect(store.peekFailed()).toHaveLength(1);
+    expect(store.countPending()).toBe(0);
     db.close();
   });
 });
@@ -398,6 +427,108 @@ describe('OutboxRelay', () => {
     } finally {
       db.close();
     }
+  });
+
+  it('a full batch of corrupt rows does not starve healthy rows behind them', async () => {
+    const db = new DatabaseSync(':memory:');
+    try {
+      const store = new OutboxStore(db);
+      const insertCorrupt = db.prepare(
+        'INSERT INTO outbox (topic, payload, key, created_at) VALUES (?, ?, ?, ?)',
+      );
+      for (let i = 0; i < 10; i++) {
+        insertCorrupt.run('orders.created', '{ not json', `BAD-${i}`, new Date().toISOString());
+      }
+      store.insertPending({ topic: 'orders.created', payload: { ok: true }, key: 'GOOD' });
+
+      const broker = createBroker({
+        driver: 'in-memory',
+        connection: { brokers: ['in-memory://'], clientId: 'outbox-poison-test' },
+      });
+      await broker.connect();
+      await broker.createTopics([{ name: 'orders.created' }]);
+
+      const received: KafkaMessage[] = [];
+      await broker.consume(
+        ['orders.created'],
+        (message, ctx) => {
+          received.push(message);
+          return ctx.commit();
+        },
+        { fromBeginning: false },
+      );
+
+      const relay = new OutboxRelay({ broker, store, logger, transactional: false });
+      // First poll quarantines the corrupt batch; the next poll must reach the
+      // healthy row instead of re-reading the same poison rows forever.
+      await relay.runOnce();
+      expect(await relay.runOnce()).toBe(1);
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(received).toHaveLength(1);
+      expect(received[0]!.key).toBe('GOOD');
+      expect(store.countPending()).toBe(0);
+      expect(store.peekFailed()).toHaveLength(10);
+
+      await broker.disconnect();
+    } finally {
+      db.close();
+    }
+  });
+
+  it('forgets dispatched ids once they are durably marked published', async () => {
+    const store = memoryStore();
+    store.insertPending({ topic: 'orders.created', payload: { n: 1 } });
+
+    const broker = createBroker({
+      driver: 'in-memory',
+      connection: { brokers: ['in-memory://'], clientId: 'outbox-ids-test' },
+    });
+    await broker.connect();
+    await broker.createTopics([{ name: 'orders.created' }]);
+
+    const relay = new OutboxRelay({ broker, store, logger, transactional: false });
+    expect(await relay.runOnce()).toBe(1);
+
+    const internal = relay as unknown as { publishedIds: Set<number> };
+    expect(internal.publishedIds.size).toBe(0);
+
+    await broker.disconnect();
+  });
+
+  it('retains dispatched ids when the durable mark fails, preventing re-publish', async () => {
+    const store = memoryStore();
+    store.insertPending({ topic: 'orders.created', payload: { n: 1 } });
+
+    const produced: string[] = [];
+    const broker = {
+      produce: async (topic: string): Promise<ProduceResult> => {
+        produced.push(topic);
+        return { topic, partition: 0, offset: String(produced.length) };
+      },
+    } as IMessageBroker;
+
+    const originalMark = store.markPublished.bind(store);
+    let markFails = true;
+    store.markPublished = (ids: number[]) => {
+      if (markFails) throw new Error('disk full');
+      originalMark(ids);
+    };
+
+    const relay = new OutboxRelay({ broker, store, logger, transactional: false });
+    expect(await relay.runOnce()).toBe(0);
+    expect(produced).toEqual(['orders.created']);
+
+    const internal = relay as unknown as { publishedIds: Set<number> };
+    expect(internal.publishedIds.size).toBe(1);
+
+    // The durable marker never landed, so the row is still pending — but the
+    // in-process guard must suppress a second send of the same row.
+    markFails = false;
+    expect(await relay.runOnce()).toBe(0);
+    expect(produced).toEqual(['orders.created']);
+
+    store.markPublished = originalMark;
   });
 
 });
