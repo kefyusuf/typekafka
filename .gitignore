@@ -8,6 +8,10 @@ dist/
 build/
 coverage/
 *.tsbuildinfo
+.pack/
+
+# Example lockfiles embed tarball integrity hashes that change on every pack
+examples/**/package-lock.json
 
 # Env
 .env

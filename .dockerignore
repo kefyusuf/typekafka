@@ -7,3 +7,5 @@ coverage
 *.sqlite
 *.sqlite-journal
 .env
+.pack
+examples

@@ -21,7 +21,7 @@ This is a reference implementation of type-safe, event-driven messaging on TypeS
 - **Multi-cluster / MirrorMaker 2** — an optional `mirror` compose profile with a second single-node KRaft cluster (`kafka-b`) and a **MirrorMaker 2** worker replicating `orders.*` (`orders.created`, `orders.payment.*`, `orders.dlq`) from the primary cluster, visible as a second `mirror` cluster in Kafka UI.
 - **Security** — an optional `security` compose profile with a **SASL_SSL**-secured KRaft cluster (`kafka-secured`, PLAIN auth: `admin` super user + `app`) guarded by **topic-scoped ACLs**; self-signed certs are generated inside the container, and the confluent driver auto-selects `security.protocol` from `BROKER_SASL_*` / `BROKER_SSL_*` env vars — no app code changes.
 
-**Status (18 November 2026):** retry-topic source propagation, DLQ offset safety, transactional outbox retry recovery, non-transactional partial-batch recovery, and outbox poison-row quarantine are verified by the unit suite (**172 passed** across 28 files); CI also passes 3 Docker-gated real-Kafka integration tests. The project remains a portfolio/reference package rather than a production-validated service; it does not yet have an external consumer application depending on it. See [Where this goes next](#where-this-goes-next).
+**Status (18 November 2026):** retry-topic source propagation, DLQ offset safety, transactional outbox retry recovery, non-transactional partial-batch recovery, and outbox poison-row quarantine are verified by the unit suite (**172 passed** across 28 files); CI also passes 3 Docker-gated real-Kafka integration tests. An example consumer ([`examples/hello-roundtrip`](examples/README.md)) installs the packages from `npm pack` tarballs and exercises the public API in CI, proving the packaging works from outside the workspace — but no production external application depends on the packages yet. The project remains a portfolio/reference package rather than a production-validated service. See [Where this goes next](#where-this-goes-next).
 
 ---
 
@@ -37,6 +37,7 @@ This is a reference implementation of type-safe, event-driven messaging on TypeS
     - [How the stack works](#how-the-stack-works)
     - [What to check](#what-to-check)
   - [Alternative — in-memory driver (no Docker)](#alternative--in-memory-driver-no-docker)
+- [Examples](#examples)
 - [Configuration](#configuration)
 - [Message contract](#message-contract)
   - [Topic-safe generic types](#topic-safe-generic-types)
@@ -279,6 +280,18 @@ In-memory mode uses the same port contract as real Kafka, so the semantics (topi
 
 ---
 
+## Examples
+
+[`examples/hello-roundtrip`](examples/README.md) is a standalone project that installs the packages from `npm pack` tarballs (`.pack/*.tgz`) via `file:` dependencies — the same artifact an external consumer would get from a registry — and runs a produce → validate → consume → commit roundtrip on the in-memory driver (no Docker). It is deliberately **not** an npm workspace member, so the packages' `files` / `exports` / `dist` packaging is exercised for real; the `examples` CI job packs, installs, builds, tests and runs it on every push and pull request.
+
+```bash
+npm run build && npm run pack:packages
+cd examples/hello-roundtrip
+npm install && npm run build && npm test && npm start
+```
+
+---
+
 ## Switching drivers
 
 `BROKER_DRIVER=in-memory|confluent` selects the adapter behind the port — apps and domain code never change.
@@ -501,6 +514,8 @@ packages/
   broker/            IMessageBroker port + in-memory / confluent adapters
   domain/            Zod schemas, event union, sample generators, notification handler
   infra/             config, logging, retry, DLQ, outbox, publisher, shutdown
+examples/
+  hello-roundtrip/   standalone consumer of the packed tarballs (not a workspace member)
 docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 .env.example         Documented environment template
 ```
@@ -513,6 +528,7 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 |---|---|
 | `npm install` | Install workspace dependencies |
 | `npm run build` | Compile all packages (topological order) |
+| `npm run pack:packages` | `npm pack` the publishable packages into `.pack/` for the examples |
 | `npm run typecheck` | `tsc --noEmit` across all packages |
 | `npm run lint` | ESLint (flat config + typescript-eslint) |
 | `npm test` | Vitest — 172 unit tests, no Docker required |
@@ -556,7 +572,7 @@ Vitest. The default `npm test` runs **172 unit tests with no Docker** — they u
 | Web server | `apps/web/test/server.test.ts` | 7 |
 | Customer view (read model + HTTP) | `apps/customer-view/test/customer-view.test.ts` | 9 |
 
-CI (`.github/workflows/ci.yml`) runs `npm ci` → `build` → `typecheck` → `lint` → `test` on Node 22 (plus Docker-gated integration tests and compose-profile validation).
+CI (`.github/workflows/ci.yml`) runs `npm ci` → `build` → `typecheck` → `lint` → `test` on Node 22 (plus Docker-gated integration tests and compose-profile validation). A separate `examples` job packs the packages, installs them into `examples/hello-roundtrip` from the tarballs, and builds, tests (2 tests) and runs the example — the only place the published-package layout is verified.
 
 ---
 
@@ -579,6 +595,6 @@ CI (`.github/workflows/ci.yml`) runs `npm ci` → `build` → `typecheck` → `l
 
 The open decision is not whether this package works — 172 unit tests and a green CI answer that. It is whether the next build (the retail copilot this plan points everything at) consumes this broker port and outbox relay as a dependency, or writes its own relay because its delivery guarantees differ.
 
-Whichever way that goes, it gets an ADR before any code moves: reuse is proof of the "don't write the same thing twice" discipline, and a deliberate own-relay decision is proof of knowing when a package does not fit. Until then this repo is the reference implementation, and the gap above — no external consumer — is its actual status, not a missing feature.
+Whichever way that goes, it gets an ADR before any code moves: reuse is proof of the "don't write the same thing twice" discipline, and a deliberate own-relay decision is proof of knowing when a package does not fit. Until then this repo is the reference implementation, and the gap above — no production external consumer (the packed-tarball example proves installability, not adoption) — is its actual status, not a missing feature.
 
 The criteria for that decision are already written: [ADR-0005](docs/adr/0005-consumer-deferred-with-criteria.md). The five recorded design decisions for this repo live in [docs/adr/](docs/adr/) — trace propagation, idempotent consumption by `eventId`, retry-topic delayed requeue, Docker security hardening, and the deferred-reuse decision.
