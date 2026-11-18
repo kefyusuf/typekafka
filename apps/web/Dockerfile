@@ -25,6 +25,10 @@ ENV WEB_PORT=3000
 
 RUN addgroup -S appuser && adduser -S appuser -G appuser
 
+# Standalone runs default OUTBOX_DB_PATH to data/outbox.db under /app; the
+# directory must exist and be writable by appuser (compose overrides to /data).
+RUN mkdir -p /app/data && chown appuser:appuser /app/data
+
 COPY --from=build --chown=appuser:appuser /app/node_modules ./node_modules
 COPY --from=build --chown=appuser:appuser /app/packages ./packages
 COPY --from=build --chown=appuser:appuser /app/apps/web ./apps/web
