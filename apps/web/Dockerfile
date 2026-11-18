@@ -7,10 +7,13 @@ COPY tsconfig.base.json ./
 COPY packages ./packages
 COPY apps ./apps
 
-RUN npm install
+RUN npm ci
 
 # Build workspace packages (root tsconfig + per-package tsconfig).
 RUN npm run build --workspaces --if-present
+
+# Drop devDependencies so the runtime image carries only production code.
+RUN npm prune --omit=dev
 
 # ---- runtime stage ----
 FROM node:22-alpine AS runtime
@@ -22,11 +25,9 @@ ENV WEB_PORT=3000
 
 RUN addgroup -S appuser && adduser -S appuser -G appuser
 
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/packages ./packages
-COPY --from=build /app/apps/web ./apps/web
-
-RUN chown -R appuser:appuser /app
+COPY --from=build --chown=appuser:appuser /app/node_modules ./node_modules
+COPY --from=build --chown=appuser:appuser /app/packages ./packages
+COPY --from=build --chown=appuser:appuser /app/apps/web ./apps/web
 
 USER appuser
 
