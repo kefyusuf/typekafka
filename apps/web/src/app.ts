@@ -12,6 +12,7 @@ import {
 import {
   createBasicAuthMiddleware,
   metricsMiddleware,
+  securityHeadersMiddleware,
   type AppLogger,
   type AppMetrics,
   type OutboxRelay,
@@ -49,6 +50,7 @@ export function createWebServer(options: WebServerOptions): WebServer {
 
   const app = express();
   app.use(express.json());
+  app.use(securityHeadersMiddleware());
   if (staticDir) {
     app.use(express.static(staticDir));
   }

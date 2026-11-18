@@ -2,6 +2,7 @@ import type { RequestHandler } from 'express';
 import { createServer } from 'node:http';
 import { Counter, Histogram, Registry } from 'prom-client';
 import { validateBasicCredentials } from './http-auth.js';
+import { applySecurityHeaders } from './http-headers.js';
 
 const LABEL_NAMES = ['topic'] as const;
 const HANDLER_DURATION_BUCKETS = [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1];
@@ -65,6 +66,7 @@ export async function startMetricsServer(
   credentials?: string,
 ): Promise<{ port: number; close(): Promise<void> }> {
   const server = createServer(async (req, res) => {
+    applySecurityHeaders(res);
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (url.pathname !== '/metrics') {
       res.statusCode = 404;
