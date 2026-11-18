@@ -21,6 +21,15 @@ export interface OutboxInsert {
   key?: string | null;
 }
 
+export interface FailedOutboxRow {
+  id: number;
+  topic: string;
+  rawPayload: string;
+  key: string | null;
+  createdAt: string;
+  failedAt: string;
+}
+
 interface RawOutboxRow {
   id: number | bigint;
   topic: string;
@@ -29,17 +38,24 @@ interface RawOutboxRow {
   created_at: string;
 }
 
+interface RawFailedOutboxRow extends RawOutboxRow {
+  failed_at: string;
+}
+
 /**
  * SQLite-backed outbox table. `insertPending` is meant to be called inside the
  * same local transaction that writes the domain row, so the app gets atomic
  * write-then-publish semantics. Rows stay pending until the relay marks them
- * published; a row with an unparseable payload is skipped by `peekPending`
- * (never deleted) so it can be inspected and re-processed.
+ * published; a row with an unparseable payload is quarantined (`failed_at`)
+ * so it can never starve the healthy rows behind it, and stays inspectable
+ * via `peekFailed` for manual re-processing.
  */
 export class OutboxStore {
   private readonly insertStmt: StatementSync;
   private readonly peekStmt: StatementSync;
   private readonly countStmt: StatementSync;
+  private readonly markFailedStmt: StatementSync;
+  private readonly peekFailedStmt: StatementSync;
 
   constructor(private readonly db: DatabaseSync) {
     db.exec(`
@@ -49,17 +65,30 @@ export class OutboxStore {
         payload TEXT NOT NULL,
         key TEXT,
         created_at TEXT NOT NULL,
-        published_at TEXT
+        published_at TEXT,
+        failed_at TEXT
       );
       CREATE INDEX IF NOT EXISTS outbox_pending_idx ON outbox (published_at, id);
     `);
+    // Databases created before the quarantine column existed need the column
+    // added in place; CREATE TABLE IF NOT EXISTS does not touch them.
+    const columns = db.prepare('PRAGMA table_info(outbox)').all() as Array<{ name: string }>;
+    if (!columns.some((c) => c.name === 'failed_at')) {
+      db.exec('ALTER TABLE outbox ADD COLUMN failed_at TEXT');
+    }
     this.insertStmt = db.prepare(
       'INSERT INTO outbox (topic, payload, key, created_at) VALUES (?, ?, ?, ?)',
     );
     this.peekStmt = db.prepare(
-      'SELECT id, topic, payload, key, created_at FROM outbox WHERE published_at IS NULL ORDER BY id LIMIT ?',
+      'SELECT id, topic, payload, key, created_at FROM outbox WHERE published_at IS NULL AND failed_at IS NULL ORDER BY id LIMIT ?',
     );
-    this.countStmt = db.prepare('SELECT COUNT(*) AS c FROM outbox WHERE published_at IS NULL');
+    this.countStmt = db.prepare(
+      'SELECT COUNT(*) AS c FROM outbox WHERE published_at IS NULL AND failed_at IS NULL',
+    );
+    this.markFailedStmt = db.prepare('UPDATE outbox SET failed_at = ? WHERE id = ?');
+    this.peekFailedStmt = db.prepare(
+      'SELECT id, topic, payload, key, created_at, failed_at FROM outbox WHERE failed_at IS NOT NULL ORDER BY id LIMIT ?',
+    );
   }
 
   insertPending(insert: OutboxInsert): number {
@@ -80,6 +109,9 @@ export class OutboxStore {
       try {
         payload = JSON.parse(row.payload);
       } catch {
+        // Quarantine poison rows so a batch of them cannot starve the healthy
+        // rows behind them; the raw payload stays available via peekFailed.
+        this.markFailedStmt.run(new Date().toISOString(), row.id);
         continue;
       }
       pending.push({
@@ -91,6 +123,18 @@ export class OutboxStore {
       });
     }
     return pending;
+  }
+
+  peekFailed(limit = 10): FailedOutboxRow[] {
+    const rows = this.peekFailedStmt.all(limit) as unknown as RawFailedOutboxRow[];
+    return rows.map((row) => ({
+      id: Number(row.id),
+      topic: row.topic,
+      rawPayload: row.payload,
+      key: row.key,
+      createdAt: row.created_at,
+      failedAt: row.failed_at,
+    }));
   }
 
   markPublished(ids: number[]): void {
@@ -138,10 +182,11 @@ export class OutboxRelay {
   ) => void | Promise<void>;
   /**
    * Tracks row ids published within this process so a re-poll (the relay polls
-   * on an interval) never re-publishes a row it has already dispatched. The
-   * durable marker lives in SQLite (`markPublished`), so a fresh process only
-   * sees genuinely pending rows; this set guards the window before that marker
-   * is flushed and is also a safety net if `markPublished` itself throws.
+   * on an interval) never re-publishes a row it has already dispatched. Ids
+   * are dropped again as soon as the durable marker (`markPublished`) lands,
+   * so the set only holds the window between send and durable mark — it never
+   * grows with total throughput. If `markPublished` throws, the id stays and
+   * keeps suppressing re-sends of the already-dispatched row.
    */
   private readonly publishedIds = new Set<number>();
 
@@ -178,6 +223,7 @@ export class OutboxRelay {
           // its outcome before attempting the next row in the batch.
           this.publishedIds.add(row.id);
           this.store.markPublished([row.id]);
+          this.publishedIds.delete(row.id);
           await this.onPublished?.({ row, result });
         }
       }
@@ -191,6 +237,7 @@ export class OutboxRelay {
         await tx.commit();
         for (const row of rows) this.publishedIds.add(row.id);
         this.store.markPublished(rows.map((r) => r.id));
+        for (const row of rows) this.publishedIds.delete(row.id);
         for (const p of published) {
           await this.onPublished?.(p);
         }
