@@ -71,6 +71,10 @@ What each service connects to:
 - The `BROKER_*` environment variables (`BROKER_DRIVER`, `BROKER_BROKERS`, `BROKER_CLIENT_ID`, `BROKER_SASL_USERNAME`, `BROKER_SASL_PASSWORD`, `BROKER_MEMORY_AUTO_COMMIT`) are documented in `.env.example` and validated at startup.
 - The consumer pipeline (parse, retry, DLQ, commit) behaves identically on both drivers.
 - Only serialization, transaction, and retry-topic capabilities differ — see the matrix above.
+- Scaling note (confluent transactions): the transactional producer uses a fixed
+  `transactional.id` of `${BROKER_CLIENT_ID}-tx`. Two instances sharing the same
+  client id will fence each other (Kafka's zombie-fencing by design). To run
+  multiple relay instances, give each a distinct `BROKER_CLIENT_ID`.
 
 ## Troubleshooting
 

@@ -258,7 +258,7 @@ describe('consumer pipeline (parse -> retry -> DLQ -> commit)', () => {
     // order3 (retries exhausted) and the invalid payload both dead-letter.
     expect(await counterValue(metrics.dlqTotal, TOPIC_ORDER_CREATED)).toBe(2);
     // order1 handled once, order3 handler invoked once per attempt (2).
-    expect(await handlerObservations(metrics.handlerDurationMs, TOPIC_ORDER_CREATED)).toBe(3);
+    expect(await handlerObservations(metrics.handlerDurationSeconds, TOPIC_ORDER_CREATED)).toBe(3);
     expect(handled).toEqual(['ORD-00001']);
 
     await broker.disconnect();

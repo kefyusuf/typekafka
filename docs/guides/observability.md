@@ -49,7 +49,7 @@ All counters are labeled by `topic`. `packages/infra/test/metrics.test.ts` asser
 |---|---|---|---|
 | `nodejs_kafka_messages_produced_total` | Counter | `topic` | producer |
 | `nodejs_kafka_messages_consumed_total` | Counter | `topic` | consumer, customer-view |
-| `nodejs_kafka_handler_duration_ms` | Histogram | `topic` | consumer, customer-view |
+| `nodejs_kafka_handler_duration_seconds` | Histogram | `topic` | consumer, customer-view |
 | `nodejs_kafka_retries_total` | Counter | `topic` | consumer |
 | `nodejs_kafka_dlq_total` | Counter | `topic` | consumer |
 | `nodejs_kafka_outbox_published_total` | Counter | `topic` | web (outbox relay) |

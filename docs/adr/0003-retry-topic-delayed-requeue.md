@@ -74,6 +74,13 @@ the in-place park:
 - Cost: an extra copy of the message on the retry topic per hop (storage/IO), and
   a small amount of duplicate delivery within the throttle window — acceptable and
   already neutralized by the idempotency filter (ADR-0002) keyed on `eventId`.
+- Scale note: the hop count grows with `delay / REQUEUE_THROTTLE_MS` — a message
+  waiting out the default 60s step is re-published ~60 times. At high failure
+  rates this amplifies retry-topic traffic and storage. Larger deployments
+  typically switch to tiered retry topics (`retry-5s`, `retry-1m`, `retry-1h`:
+  one hop per tier instead of one per second) or `consumer.pause()`/`resume()`
+  with a timer. This demo keeps a single retry topic for simplicity; the
+  `RetryTopicPolicy` ladder and the throttle constant are the tuning knobs.
 - Tuning knobs: `REQUEUE_THROTTLE_MS` (per-hop cap) and the
   `RetryTopicPolicy` (`delaysMs`, `maxDeliveries`) in `retry-topic.ts`.
 

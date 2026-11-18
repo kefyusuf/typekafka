@@ -573,6 +573,73 @@ describe('ConfluentKafkaAdapter', () => {
     expect(admin.disconnect).toHaveBeenCalledOnce();
   });
 
+  it('disconnect waits for the producer flush to finish before disconnecting', async () => {
+    const events: string[] = [];
+    const producer = fakeProducer({
+      flush: vi.fn(async () => {
+        events.push('flush:start');
+        await new Promise((r) => setTimeout(r, 20));
+        events.push('flush:end');
+      }),
+      disconnect: vi.fn(async () => {
+        events.push('disconnect');
+      }),
+    });
+    mocks.producerCreate.mockReturnValue(producer);
+
+    const broker = makeBroker();
+    await broker.connect();
+    await broker.produce('t', { a: 1 });
+    await broker.disconnect();
+
+    expect(events).toEqual(['flush:start', 'flush:end', 'disconnect']);
+  });
+
+  it('disconnect waits for the transactional producer flush before disconnecting', async () => {
+    const events: string[] = [];
+    const txProducer = fakeProducer({
+      transaction: vi.fn().mockResolvedValue({
+        send: vi.fn().mockResolvedValue([
+          { topicName: 't', partition: 0, baseOffset: '1' },
+        ]),
+        commit: vi.fn().mockResolvedValue(undefined),
+        abort: vi.fn().mockResolvedValue(undefined),
+      }),
+      flush: vi.fn(async () => {
+        events.push('flush:start');
+        await new Promise((r) => setTimeout(r, 20));
+        events.push('flush:end');
+      }),
+      disconnect: vi.fn(async () => {
+        events.push('disconnect');
+      }),
+    });
+    mocks.producerCreate.mockReturnValue(txProducer);
+
+    const broker = makeBroker();
+    await broker.connect();
+    const tx = await broker.beginTransaction();
+    await tx.produce('t', { a: 1 });
+    await tx.commit();
+    await broker.disconnect();
+
+    expect(events).toEqual(['flush:start', 'flush:end', 'disconnect']);
+  });
+
+  it('disconnect still tears down the producer when flush rejects', async () => {
+    const producer = fakeProducer({
+      flush: vi.fn().mockRejectedValue(new Error('flush timed out')),
+    });
+    mocks.producerCreate.mockReturnValue(producer);
+
+    const broker = makeBroker();
+    await broker.connect();
+    await broker.produce('t', { a: 1 });
+    await broker.disconnect();
+
+    expect(producer.disconnect).toHaveBeenCalledOnce();
+  });
+
   it('defaults the consumer group id when none is provided', async () => {
     const consumer = fakeConsumer();
     mocks.consumerCreate.mockReturnValue(consumer);

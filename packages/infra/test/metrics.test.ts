@@ -18,10 +18,10 @@ describe('createMetrics', () => {
       expect(handle).toBeInstanceOf(Counter);
       expect(metrics.registry.getSingleMetric(name)).toBe(handle);
     }
-    expect(metrics.handlerDurationMs).toBeInstanceOf(Histogram);
+    expect(metrics.handlerDurationSeconds).toBeInstanceOf(Histogram);
     expect(
-      metrics.registry.getSingleMetric('nodejs_kafka_handler_duration_ms'),
-    ).toBe(metrics.handlerDurationMs);
+      metrics.registry.getSingleMetric('nodejs_kafka_handler_duration_seconds'),
+    ).toBe(metrics.handlerDurationSeconds);
   });
 
   it('records a produced counter increment', async () => {
@@ -35,16 +35,30 @@ describe('createMetrics', () => {
     expect(counter?.values[0]?.value).toBe(1);
   });
 
-  it('records a handler duration observation', async () => {
+  it('records a handler duration observation in seconds', async () => {
     const metrics = createMetrics();
-    metrics.handlerDurationMs.labels({ topic: 'orders.created' }).observe(12);
+    metrics.handlerDurationSeconds.labels({ topic: 'orders.created' }).observe(0.012);
 
     const json = await metrics.registry.getMetricsAsJSON();
     const histogram = json.find(
-      (m) => m.name === 'nodejs_kafka_handler_duration_ms',
+      (m) => m.name === 'nodejs_kafka_handler_duration_seconds',
     );
-    const sum = histogram?.values.find((v) => v.value === 12)?.value;
-    expect(sum).toBe(12);
+    const sum = histogram?.values.find((v) => v.value === 0.012)?.value;
+    expect(sum).toBe(0.012);
+  });
+
+  it('uses second-scale histogram buckets (Prometheus base units)', async () => {
+    const metrics = createMetrics();
+    metrics.handlerDurationSeconds.labels({ topic: 'orders.created' }).observe(0.012);
+
+    const values = (await metrics.handlerDurationSeconds.get()).values;
+    const boundaries = values
+      .map((v) => v.labels['le'])
+      .filter((le) => le !== undefined && le !== '+Inf')
+      .map(Number);
+    expect(boundaries.length).toBeGreaterThan(0);
+    expect(Math.max(...boundaries)).toBeLessThanOrEqual(1);
+    expect(boundaries).toContain(0.001);
   });
 });
 
