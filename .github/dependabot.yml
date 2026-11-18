@@ -26,3 +26,8 @@ updates:
       - /apps/customer-view
     schedule:
       interval: weekly
+    ignore:
+      # confluent-kafka-javascript ships prebuilt binaries only up to the
+      # Node 24 ABI; Node 26+ images fail npm ci. Revisit when it catches up.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
