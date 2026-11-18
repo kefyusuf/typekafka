@@ -6,7 +6,7 @@
 
 Type-safe **Kafka messaging on Node.js** — built with **TypeScript**, **Zod**, and a plug-and-play **Ports & Adapters** architecture.
 
-This is a reference implementation of type-safe, event-driven messaging on TypeScript + Node.js + Kafka, gated by **164 unit tests** (no Docker) and **3 Docker-gated integration tests** — see [Tests](#tests). It covers:
+This is a reference implementation of type-safe, event-driven messaging on TypeScript + Node.js + Kafka, gated by **167 unit tests** (no Docker) and **3 Docker-gated integration tests** — see [Tests](#tests). It covers:
 
 - A broker **port** (`IMessageBroker`) with **two swappable adapters** — an in-memory broker (zero deps) and a real Kafka driver (Confluent).
 - **End-to-end type safety**: Zod schemas bound to topics at compile time, validated at runtime before the broker ever sees a message.
@@ -21,7 +21,7 @@ This is a reference implementation of type-safe, event-driven messaging on TypeS
 - **Multi-cluster / MirrorMaker 2** — an optional `mirror` compose profile with a second single-node KRaft cluster (`kafka-b`) and a **MirrorMaker 2** worker replicating `orders.*` (`orders.created`, `orders.payment.*`, `orders.dlq`) from the primary cluster, visible as a second `mirror` cluster in Kafka UI.
 - **Security** — an optional `security` compose profile with a **SASL_SSL**-secured KRaft cluster (`kafka-secured`, PLAIN auth: `admin` super user + `app`) guarded by **topic-scoped ACLs**; self-signed certs are generated inside the container, and the confluent driver auto-selects `security.protocol` from `BROKER_SASL_*` / `BROKER_SSL_*` env vars — no app code changes.
 
-**Status (18 November 2026):** retry-topic source propagation, DLQ offset safety, transactional outbox retry recovery, non-transactional partial-batch recovery, and outbox poison-row quarantine are verified by the unit suite (**164 passed** across 27 files); CI also passes 3 Docker-gated real-Kafka integration tests. The project remains a portfolio/reference package rather than a production-validated service; it does not yet have an external consumer application depending on it. See [Where this goes next](#where-this-goes-next).
+**Status (18 November 2026):** retry-topic source propagation, DLQ offset safety, transactional outbox retry recovery, non-transactional partial-batch recovery, and outbox poison-row quarantine are verified by the unit suite (**167 passed** across 27 files); CI also passes 3 Docker-gated real-Kafka integration tests. The project remains a portfolio/reference package rather than a production-validated service; it does not yet have an external consumer application depending on it. See [Where this goes next](#where-this-goes-next).
 
 ---
 
@@ -485,7 +485,7 @@ The React UI is served statically on the same origin (see `apps/web/src/ui`).
 | **Consumer groups / offsets** | `ConsumeOptions` (manual commit, group id, concurrency) |
 | **Multi-stage Docker builds** | `apps/*/Dockerfile` |
 | **KRaft Kafka (no ZooKeeper)** | `docker-compose.yml` |
-| **Unit + integration tests** | Vitest — 164 unit tests (no Docker) + 3 Docker-gated integration tests |
+| **Unit + integration tests** | Vitest — 167 unit tests (no Docker) + 3 Docker-gated integration tests |
 
 ---
 
@@ -515,7 +515,7 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 | `npm run build` | Compile all packages (topological order) |
 | `npm run typecheck` | `tsc --noEmit` across all packages |
 | `npm run lint` | ESLint (flat config + typescript-eslint) |
-| `npm test` | Vitest — 164 unit tests, no Docker required |
+| `npm test` | Vitest — 167 unit tests, no Docker required |
 | `npm run test:integration` | Vitest — 3 Docker-gated real-Kafka tests (needs Docker for Testcontainers) |
 | `npm run dev:producer -- --count N` | Produce N order+payment pairs (`--delay` also accepted, ms) |
 | `npm run dev:consumer` | Consumer worker (in-memory self-demo) |
@@ -527,7 +527,7 @@ docker-compose.yml   Kafka (KRaft) + Kafka UI + app services
 
 ## Tests
 
-Vitest. The default `npm test` runs **164 unit tests with no Docker** — they use the in-memory driver, `node:sqlite` `:memory:` databases, and mocks. A separate Docker-gated integration suite (3 tests in `apps/consumer/test/integration`, run via `npm run test:integration`) exercises the full pipeline against a real Kafka container when Docker is available:
+Vitest. The default `npm test` runs **167 unit tests with no Docker** — they use the in-memory driver, `node:sqlite` `:memory:` databases, and mocks. A separate Docker-gated integration suite (3 tests in `apps/consumer/test/integration`, run via `npm run test:integration`) exercises the full pipeline against a real Kafka container when Docker is available:
 
 | Suite | File | Tests |
 |---|---|---|
@@ -577,7 +577,7 @@ CI (`.github/workflows/ci.yml`) runs `npm ci` → `build` → `typecheck` → `l
 
 ## Where this goes next
 
-The open decision is not whether this package works — 164 unit tests and a green CI answer that. It is whether the next build (the retail copilot this plan points everything at) consumes this broker port and outbox relay as a dependency, or writes its own relay because its delivery guarantees differ.
+The open decision is not whether this package works — 167 unit tests and a green CI answer that. It is whether the next build (the retail copilot this plan points everything at) consumes this broker port and outbox relay as a dependency, or writes its own relay because its delivery guarantees differ.
 
 Whichever way that goes, it gets an ADR before any code moves: reuse is proof of the "don't write the same thing twice" discipline, and a deliberate own-relay decision is proof of knowing when a package does not fit. Until then this repo is the reference implementation, and the gap above — no external consumer — is its actual status, not a missing feature.
 
