@@ -11,7 +11,8 @@
  * success**, so a transient in-flight retry (which has not completed yet) is
  * never suppressed — only a true re-delivery of a finished event is skipped.
  *
- * The store is in-memory and bounded (LRU eviction). That is enough for a
+ * The store is in-memory and bounded (FIFO eviction: the oldest inserted
+ * entry leaves first; reads do not refresh recency). That is enough for a
  * single consumer instance within its uptime, but it does not survive a
  * restart: for cross-restart safety, back this with a durable store (e.g. a
  * unique constraint on `eventId` in the downstream write, or Redis/SQLite).
