@@ -201,7 +201,7 @@ Node ≥ 22.13 (Docker / CI images resolve to the latest 22.x).
 
 Requirements: **Docker** (standard usage) or **Node.js 22+** (no-Docker path).
 
-> **Node versions** — developed and CI-tested on **Node 22**. Also verified locally on **Node 22–26**. If you switch Node major versions after `npm install`, rebuild the native Confluent binding with `npm rebuild @confluentinc/kafka-javascript` (or reinstall) so `NODE_MODULE_VERSION` matches.
+> **Node versions** — developed and CI-tested on **Node 22** (LTS). The native Confluent binding (`@confluentinc/kafka-javascript` 1.11.0) ships prebuilt binaries up to the **Node 24** ABI (`node-v137`). **Node 26 is currently blocked**: no `node-v147` prebuilt exists, and the Alpine images have no toolchain to compile `librdkafka` from source, so `npm ci` fails there. Dependabot ignores `node` major bumps until upstream catches up (see `.github/dependabot.yml`); revisit when Confluent publishes newer ABI binaries. If you switch Node major versions within the supported range after `npm install`, rebuild the native binding with `npm rebuild @confluentinc/kafka-javascript` (or reinstall) so `NODE_MODULE_VERSION` matches.
 
 ### Standard usage — Docker stack
 
