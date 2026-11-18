@@ -32,7 +32,9 @@ sibling `apps/producer`, `apps/web`, `apps/customer-view` Dockerfiles) build in 
 `node:22-alpine` multi-stage image, then in the runtime stage:
 
 - `addgroup -S appuser && adduser -S appuser -G appuser`,
-- `chown -R appuser:appuser /app`,
+- `COPY --from=build --chown=appuser:appuser` for the runtime content (the web
+  image also pre-creates an appuser-owned `/app/data` for its standalone outbox
+  database),
 - `USER appuser`.
 
 `docker-compose.yml` applies defense-in-depth to every service:
@@ -92,7 +94,8 @@ Wiring (keep the health probe unauthenticated so orchestrators can still probe):
 
 Demo stacks normally run containers as root with full capabilities, and a learning
 repository that copies the pattern teaches the wrong defaults. Every app image builds a
-multi-stage `node:22-alpine` image, creates an `appuser`, chowns `/app` to it and switches
+multi-stage `node:22-alpine` image, creates an `appuser`, copies the runtime content with
+`--chown=appuser:appuser` and switches
 `USER appuser`, while `docker-compose.yml` adds `read_only` with a `tmpfs` for the writable
 paths, `cap_drop: ["ALL"]`, `no-new-privileges` and per-service CPU/memory limits. Two
 exceptions are documented in the compose file rather than tidied away: the kafka broker
