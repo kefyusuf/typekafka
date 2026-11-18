@@ -16,7 +16,7 @@ describe('createIdempotencyFilter', () => {
     expect(filter.isDuplicate('evt-2')).toBe(false);
   });
 
-  it('evicts the oldest entry beyond maxSize (LRU bound)', () => {
+  it('evicts the oldest entry beyond maxSize (FIFO bound)', () => {
     const filter = createIdempotencyFilter({ maxSize: 1 });
     filter.mark('a');
     expect(filter.isDuplicate('a')).toBe(true);
