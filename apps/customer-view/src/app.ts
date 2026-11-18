@@ -5,6 +5,7 @@ import { CUSTOMER_TOPIC } from '@typekafka/domain';
 import {
   createBasicAuthMiddleware,
   metricsMiddleware,
+  securityHeadersMiddleware,
   type AppLogger,
   type AppMetrics,
 } from '@typekafka/infra';
@@ -31,6 +32,7 @@ export function createCustomerViewServer(
 
   const app = express();
   app.use(express.json());
+  app.use(securityHeadersMiddleware());
 
   // Health probe stays open (no auth) so orchestrators can probe it.
   app.get('/health', (_req, res) => {
