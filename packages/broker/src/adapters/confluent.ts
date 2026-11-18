@@ -150,19 +150,17 @@ export class ConfluentKafkaAdapter implements IMessageBroker {
 
     await Promise.allSettled(handles.map((h) => h.consumer.disconnect()));
 
+    // Flush must finish before disconnect starts, otherwise in-flight records
+    // can be dropped; a failed flush still must not skip the teardown.
     if (this.producer && this.producerConnected) {
-      await Promise.allSettled([
-        this.producer.flush({ timeout: PRODUCER_FLUSH_TIMEOUT_MS }),
-        this.producer.disconnect(),
-      ]);
+      await this.producer.flush({ timeout: PRODUCER_FLUSH_TIMEOUT_MS }).catch(() => {});
+      await this.producer.disconnect().catch(() => {});
       this.producerConnected = false;
     }
 
     if (this.txProducer && this.txProducerConnected) {
-      await Promise.allSettled([
-        this.txProducer.flush({ timeout: PRODUCER_FLUSH_TIMEOUT_MS }),
-        this.txProducer.disconnect(),
-      ]);
+      await this.txProducer.flush({ timeout: PRODUCER_FLUSH_TIMEOUT_MS }).catch(() => {});
+      await this.txProducer.disconnect().catch(() => {});
       this.txProducerConnected = false;
     }
 
