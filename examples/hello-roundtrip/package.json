@@ -1,0 +1,21 @@
+{
+  "name": "@typekafka-examples/hello-roundtrip",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Minimal external consumer: produce a validated domain event, consume it back, commit.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@typekafka/broker": "file:../../.pack/typekafka-broker-0.1.0.tgz",
+    "@typekafka/domain": "file:../../.pack/typekafka-domain-0.1.0.tgz"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "typescript": "^5.5.4",
+    "vitest": "^5.1.0"
+  }
+}
